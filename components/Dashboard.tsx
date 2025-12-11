@@ -329,7 +329,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, records, tasks,
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-serif text-gray-900 dark:text-white">
-                        Hola, {currentUser?.name?.split(' ')[0]} <span className="text-xs text-sushi-gold font-mono font-bold tracking-wide border border-sushi-gold/30 bg-sushi-gold/10 px-1.5 py-0.5 rounded">(v2.11)</span>
+                        Hola, {currentUser?.name?.split(' ')[0]} <span className="text-xs text-sushi-gold font-mono font-bold tracking-wide border border-sushi-gold/30 bg-sushi-gold/10 px-1.5 py-0.5 rounded">(v2.11 BETA)</span>
                     </h1>
                     <p className="text-gray-500 dark:text-sushi-muted text-sm">{date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
                 </div>
