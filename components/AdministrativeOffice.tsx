@@ -10,6 +10,32 @@ import { CatWidget } from './widgets/CatWidget';
 
 import { generateDocumentStructure } from '../services/geminiService';
 import { UserProfileModal } from './UserProfileModal';
+import { generateUUID } from '../utils/uuid';
+
+// MODULE_NAMES_ES Constant moved outside component
+const MODULE_NAMES_ES: Record<string, string> = {
+    'OFFICE': 'Oficina',
+    'DASHBOARD': 'Panel General',
+    'EMPLOYEES': 'Empleados',
+    'SETTINGS': 'Configuración',
+    'ADMIN_HUB': 'Central Administrativa',
+    'PAYROLL': 'Pagos y Nómina',
+    'SUPPLIERS': 'Insumos',
+    'FINANCE': 'Finanzas',
+    'OVERTIME': 'Horas Extra',
+    'FILES': 'Legajos',
+    'SANCTIONS': 'Sanciones',
+    'USERS': 'Usuarios',
+    'FORUM': 'Foro',
+    'INTERNAL_MAIL': 'Mensajería',
+    'AI_REPORT': 'Informe IA',
+    'MEMBER_CALENDAR': 'Mi Agenda',
+    'MEMBER_TASKS': 'Mis Tareas',
+    'MEMBER_FILE': 'Mi Legajo',
+    'MEMBER_FORUM': 'Foro Equipo',
+    'INVENTORY': 'Inventario',
+    'CASH_REGISTER': 'Caja'
+};
 
 interface AdministrativeOfficeProps {
     currentUser: User;
@@ -70,15 +96,7 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     documents,
     setDocuments
 }) => {
-    const generateUUID = () => {
-        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-            return crypto.randomUUID();
-        }
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    };
+
 
     // Component State
     const [viewMode, setViewMode] = useState<'DOCS' | 'TEAM' | 'CENTRAL'>('DOCS');
@@ -528,29 +546,7 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     };
 
 
-    const MODULE_NAMES_ES: Record<string, string> = {
-        'OFFICE': 'Oficina',
-        'DASHBOARD': 'Panel General',
-        'EMPLOYEES': 'Empleados',
-        'SETTINGS': 'Configuración',
-        'ADMIN_HUB': 'Central Administrativa',
-        'PAYROLL': 'Pagos y Nómina',
-        'SUPPLIERS': 'Insumos',
-        'FINANCE': 'Finanzas',
-        'OVERTIME': 'Horas Extra',
-        'FILES': 'Legajos',
-        'SANCTIONS': 'Sanciones',
-        'USERS': 'Usuarios',
-        'FORUM': 'Foro',
-        'INTERNAL_MAIL': 'Mensajería',
-        'AI_REPORT': 'Informe IA',
-        'MEMBER_CALENDAR': 'Mi Agenda',
-        'MEMBER_TASKS': 'Mis Tareas',
-        'MEMBER_FILE': 'Mi Legajo',
-        'MEMBER_FORUM': 'Foro Equipo',
-        'INVENTORY': 'Inventario',
-        'CASH_REGISTER': 'Caja'
-    };
+
 
     // UI Renders
 

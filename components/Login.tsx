@@ -7,8 +7,8 @@ import { playSound } from '../utils/soundUtils';
 interface LoginProps {
     users: User[];
     employees?: Employee[]; // Pass employees for member login
-    onLogin: (user: User) => void;
-    onMemberLogin?: (employee: Employee) => void;
+    onLogin: (user: User, remember: boolean) => void;
+    onMemberLogin?: (employee: Employee, remember: boolean) => void;
 }
 
 type LoginMode = 'ADMIN' | 'MEMBER';
@@ -19,6 +19,7 @@ export const Login: React.FC<LoginProps> = ({ users, employees = [], onLogin, on
     // Admin State
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [remember, setRemember] = useState(false);
 
     // Member State
     const [dni, setDni] = useState('');
@@ -32,7 +33,7 @@ export const Login: React.FC<LoginProps> = ({ users, employees = [], onLogin, on
 
         if (user) {
             playSound('LOGIN');
-            onLogin(user);
+            onLogin(user, remember);
         } else {
             playSound('ERROR');
             setError('Credenciales de administrador inválidas');
@@ -54,7 +55,7 @@ export const Login: React.FC<LoginProps> = ({ users, employees = [], onLogin, on
         if (member) {
             if (member.password === memberPassword) {
                 playSound('LOGIN');
-                onMemberLogin(member);
+                onMemberLogin(member, remember);
             } else {
                 playSound('ERROR');
                 setError('Contraseña incorrecta.');
@@ -129,6 +130,20 @@ export const Login: React.FC<LoginProps> = ({ users, employees = [], onLogin, on
                                 </div>
                             </div>
 
+                            {/* Remember Me */}
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="remember_admin"
+                                    checked={remember}
+                                    onChange={e => setRemember(e.target.checked)}
+                                    className="accent-sushi-gold w-4 h-4"
+                                />
+                                <label htmlFor="remember_admin" className="text-sm text-gray-500 dark:text-sushi-muted cursor-pointer select-none">
+                                    Mantener sesión iniciada
+                                </label>
+                            </div>
+
                             {error && (
                                 <div className="text-red-500 dark:text-red-400 text-sm text-center bg-red-100 dark:bg-red-400/10 py-2 rounded animate-shake">
                                     {error}
@@ -174,6 +189,20 @@ export const Login: React.FC<LoginProps> = ({ users, employees = [], onLogin, on
                                         placeholder="••••••"
                                     />
                                 </div>
+                            </div>
+
+                            {/* Remember Me */}
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="remember_member"
+                                    checked={remember}
+                                    onChange={e => setRemember(e.target.checked)}
+                                    className="accent-sushi-gold w-4 h-4"
+                                />
+                                <label htmlFor="remember_member" className="text-sm text-gray-500 dark:text-sushi-muted cursor-pointer select-none">
+                                    Mantener sesión iniciada
+                                </label>
                             </div>
 
                             {error && (

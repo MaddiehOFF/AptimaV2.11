@@ -40,6 +40,7 @@ import { useSupabaseCollection } from './hooks/useSupabase';
 import { calculateAccruedSalary, runHiroshiTest } from './utils/payrollUtils';
 import { useActivityTracker } from './hooks/useActivityTracker';
 import { UserProfileModal } from './components/UserProfileModal';
+import { setCookie, getCookie, deleteCookie } from './utils/cookieUtils';
 
 // DEFAULT ROLE PERMISSIONS
 const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
@@ -78,8 +79,51 @@ const App: React.FC = () => {
     const { data: userActivityLogs } = useSupabaseCollection<UserActivityLog>('user_activity_logs', []);
 
     // Auth State
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [currentMember, setCurrentMember] = useState<Employee | null>(null);
+    const [currentUser, setCurrentUser] = useState<User | null>(() => {
+        try {
+            const hasSession = getCookie('sushiblack_auth');
+            const TIMEOUT = 40 * 60 * 1000;
+            const now = Date.now();
+
+            if (hasSession) {
+                // We have a valid session key (cookie), try to load data
+                const savedUser = localStorage.getItem('sushiblack_session_user');
+                const lastActive = localStorage.getItem('sushiblack_last_active');
+
+                if (savedUser && lastActive) {
+                    // Check inactivity timeout
+                    if (now - parseInt(lastActive, 10) < TIMEOUT) {
+                        return JSON.parse(savedUser);
+                    }
+                }
+            }
+
+            // If no cookie or invalid data, clean up potential leftovers
+            localStorage.removeItem('sushiblack_session_user');
+        } catch (e) { console.error("Error restoring session", e); }
+        return null;
+    });
+
+    const [currentMember, setCurrentMember] = useState<Employee | null>(() => {
+        try {
+            const hasSession = getCookie('sushiblack_auth');
+            const TIMEOUT = 40 * 60 * 1000;
+            const now = Date.now();
+
+            if (hasSession) {
+                const savedMember = localStorage.getItem('sushiblack_session_member');
+                const lastActive = localStorage.getItem('sushiblack_last_active');
+
+                if (savedMember && lastActive) {
+                    if (now - parseInt(lastActive, 10) < TIMEOUT) {
+                        return JSON.parse(savedMember);
+                    }
+                }
+            }
+            localStorage.removeItem('sushiblack_session_member');
+        } catch (e) { console.error("Error restoring member session", e); }
+        return null;
+    });
 
     // App Data State
     const [currentView, setView] = useState<View>(View.DASHBOARD);
@@ -104,7 +148,8 @@ const App: React.FC = () => {
             users, employees, records, sanctions,
             inventoryItems, inventorySessions,
             cashShifts, walletTransactions,
-            products, fixedExpenses, partners, royaltyPool: [], // Assuming royaltyPool is not directly available or needs to be calculated
+            products, fixedExpenses, partners, royaltyPool: [],
+            royaltyHistory, appSettings, // Added these
             posts: posts, adminTasks, calendarEvents,
             absences, checklistSnapshots, coordinatorNotes
         };
@@ -421,9 +466,9 @@ const App: React.FC = () => {
     }, [walletTransactions, setWalletTransactions]);
 
     // Auth Handlers
-    const handleLogin = (user: User) => {
-        const now = new Date().toISOString();
-        const updatedUser = { ...user, lastLogin: now, status: 'active' as const };
+    const handleLogin = (user: User, remember: boolean) => {
+        const nowStr = new Date().toISOString();
+        const updatedUser = { ...user, lastLogin: nowStr, status: 'active' as const };
 
         // Update Supabase
         const newUsers = users.map(u => u.id === user.id ? updatedUser : u);
@@ -431,6 +476,28 @@ const App: React.FC = () => {
 
         setCurrentUser(updatedUser);
         setCurrentMember(null);
+
+        // Persistence Logic
+        const nowTs = Date.now().toString();
+
+        // 1. Set Data in LocalStorage (Always)
+        localStorage.setItem('sushiblack_session_user', JSON.stringify(updatedUser));
+        localStorage.setItem('sushiblack_last_active', nowTs);
+
+        // Clean up other role
+        localStorage.removeItem('sushiblack_session_member');
+
+        // Clean up legacy
+        sessionStorage.clear();
+        localStorage.removeItem('sushiblack_persistence_mode');
+
+        // 2. Set Cookie Key
+        if (remember) {
+            setCookie('sushiblack_auth', 'true', 365); // Persistent 1 year
+        } else {
+            setCookie('sushiblack_auth', 'true'); // Session cookie (cleared on close)
+        }
+
         setView(View.DASHBOARD);
 
         const tourCompleted = localStorage.getItem('sushiblack_tour_completed');
@@ -439,15 +506,32 @@ const App: React.FC = () => {
         }
     };
 
-    const handleMemberLogin = (employee: Employee) => {
-        const now = new Date().toISOString();
-        const updatedMember = { ...employee, lastActive: now, status: 'active' as const };
+    const handleMemberLogin = (employee: Employee, remember: boolean) => {
+        const nowStr = new Date().toISOString();
+        const updatedMember = { ...employee, lastActive: nowStr, status: 'active' as const };
 
         // Update Supabase Persistence
         setEmployees(prev => prev.map(e => e.id === employee.id ? updatedMember : e));
         setCurrentMember(updatedMember);
 
         setCurrentUser(null);
+
+        // Persistence Logic
+        const nowTs = Date.now().toString();
+
+        localStorage.setItem('sushiblack_session_member', JSON.stringify(updatedMember));
+        localStorage.setItem('sushiblack_last_active', nowTs);
+
+        localStorage.removeItem('sushiblack_session_user');
+        sessionStorage.clear();
+        localStorage.removeItem('sushiblack_persistence_mode');
+
+        if (remember) {
+            setCookie('sushiblack_auth', 'true', 365);
+        } else {
+            setCookie('sushiblack_auth', 'true');
+        }
+
         setView(View.MEMBER_HOME);
 
         const tourCompleted = localStorage.getItem(`sushiblack_tour_member_${employee.id}`);
@@ -457,7 +541,7 @@ const App: React.FC = () => {
     };
 
     const handleLogout = () => {
-        // Set Persistence to Break
+        // ... (status update logic remains same)
         if (currentUser) {
             const updatedUser = { ...currentUser, status: 'break' as const };
             setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
@@ -465,6 +549,14 @@ const App: React.FC = () => {
             const updatedMember = { ...currentMember, status: 'break' as const };
             setEmployees(prev => prev.map(e => e.id === currentMember.id ? updatedMember : e));
         }
+
+        // Clear All Persistence
+        deleteCookie('sushiblack_auth');
+        localStorage.removeItem('sushiblack_session_user');
+        localStorage.removeItem('sushiblack_session_member');
+        localStorage.removeItem('sushiblack_last_active');
+        localStorage.removeItem('sushiblack_persistence_mode');
+        sessionStorage.clear();
 
         // Clear State
         setCurrentUser(null);
@@ -574,19 +666,44 @@ const App: React.FC = () => {
         }));
     };
 
-    // SESSION TIMEOUT (30 Minutes)
+    // SESSION TIMEOUT (40 Minutes)
     useEffect(() => {
         if (!currentUser && !currentMember) return;
 
-        const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+        const TIMEOUT_MS = 40 * 60 * 1000; // 40 minutes
         let timeoutId: any;
 
         const resetTimer = () => {
+            const now = Date.now();
+
+            // Validate Session via Cookie
+            const hasSession = getCookie('sushiblack_auth');
+            if (!hasSession) {
+                // If cookie died (e.g. user deleted it manually or logic error), logout
+                console.log("Session cookie missing.");
+                handleLogout();
+                return;
+            }
+
+            // Check Inactivity
+            const lastActive = localStorage.getItem('sushiblack_last_active');
+            if (lastActive) {
+                if (now - parseInt(lastActive, 10) > TIMEOUT_MS) {
+                    console.log("Session expired (inactivity).");
+                    handleLogout();
+                    alert("Tu sesión ha expirado por inactividad (40 min).");
+                    return;
+                }
+                // Refresh timestamp
+                localStorage.setItem('sushiblack_last_active', now.toString());
+            }
+
+            // Reset JS timer
             clearTimeout(timeoutId);
             timeoutId = setTimeout(() => {
                 console.log("Session timed out due to inactivity.");
                 handleLogout();
-                alert("Tu sesión ha expirado por inactividad (30 min). Por favor, inicia sesión nuevamente.");
+                alert("Tu sesión ha expirado por inactividad (40 min). Por favor, inicia sesión nuevamente.");
             }, TIMEOUT_MS);
         };
 
@@ -597,7 +714,7 @@ const App: React.FC = () => {
         window.addEventListener('scroll', resetTimer);
         window.addEventListener('touchstart', resetTimer);
 
-        resetTimer(); // Start timer
+        resetTimer(); // Start timer on mount/update
 
         return () => {
             clearTimeout(timeoutId);
