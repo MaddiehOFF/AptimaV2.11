@@ -344,8 +344,11 @@ export const ActivityFeedWidget = ({ recentSanctions, employees, setView, curren
             return 0;
         };
 
+        // Deduplicate items by ID
+        const uniqueItems = Array.from(new Map(items.map(item => [item.id, item])).values());
+
         // Sort items by date descending (Newest first)
-        return items.filter(item => {
+        return uniqueItems.filter(item => {
             const t = parseSafely(item.date);
             return t <= Date.now() + 60000;
         }).sort((a, b) => {

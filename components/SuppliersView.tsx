@@ -166,6 +166,53 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
         if (file) processImageFile(file);
     };
 
+    // --- QUICK LIST IMAGE UPLOAD ---
+    const listFileInputRef = React.useRef<HTMLInputElement>(null);
+    const [quickUploadProductId, setQuickUploadProductId] = useState<string | null>(null);
+
+    const handleListImageClick = (e: React.MouseEvent, productId: string) => {
+        e.stopPropagation(); // Prevent row click or other events
+        setQuickUploadProductId(productId);
+        listFileInputRef.current?.click();
+    };
+
+    const handleListImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !quickUploadProductId) return;
+
+        if (!file.type.startsWith('image/')) {
+            alert('Por favor, sube un archivo de imagen válido.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const base64 = event.target?.result as string;
+
+                // Find original product to maintain other fields if necessary
+                const originalProduct = products.find(p => p.id === quickUploadProductId);
+                if (!originalProduct) return;
+
+                await updateProduct({
+                    ...originalProduct,
+                    photoUrl: base64,
+                    updatedBy: userName,
+                    updatedAt: new Date().toISOString()
+                });
+
+                // alert("Imagen actualizada correctamente"); // Optional feedback
+            } catch (err: any) {
+                console.error("Error updating image:", err);
+                alert("Error al actualizar la imagen: " + err.message);
+            } finally {
+                setQuickUploadProductId(null);
+                if (listFileInputRef.current) listFileInputRef.current.value = '';
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
     // UTILS
     const generateUUID = () => {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -459,12 +506,22 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                                             />
                                         </td>
                                         <td className="p-4">
-                                            <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-white/5 overflow-hidden border border-gray-200 dark:border-white/10 shrink-0">
+                                            <div
+                                                onClick={(e) => handleListImageClick(e, p.id)}
+                                                className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-white/5 overflow-hidden border border-gray-200 dark:border-white/10 shrink-0 cursor-pointer hover:ring-2 hover:ring-sushi-gold transition-all relative group"
+                                                title="Click para cambiar foto"
+                                            >
                                                 {p.photoUrl ? (
                                                     <img src={p.photoUrl} alt="" className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-gray-400"><Package className="w-5 h-5" /></div>
+                                                    <div className="w-full h-full flex items-center justify-center text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-white/10 transition-colors">
+                                                        <Package className="w-5 h-5" />
+                                                    </div>
                                                 )}
+                                                {/* Hover Overlay */}
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                    <Camera className="w-4 h-4 text-white drop-shadow-md" />
+                                                </div>
                                             </div>
                                         </td>
                                         <td className="p-4">
@@ -883,6 +940,15 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                     </div>
                 </div>
             )}
+
+            {/* HIDDEN INPUT FOR QUICK LIST UPLOAD */}
+            <input
+                type="file"
+                ref={listFileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleListImageUpload}
+            />
 
             {/* Confirmation Modal */}
             <ConfirmationModal

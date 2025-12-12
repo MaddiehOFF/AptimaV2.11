@@ -228,52 +228,62 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
         }
     }, [currentMember?.id, currentUser?.id]);
 
-    // --- COORDINATOR OVERRIDE LOGIC ---
-    // Forces the member sidebar to show    // NEW EFFECT: Force Coordinator Overrides if necessary
+    // --- DYNAMIC PERMISSION OVERRIDE LOGIC ---
+    // Adds specific admin views to member sidebar if they have granular permissions
     useEffect(() => {
-        const role = currentUser?.role || currentMember?.role;
-        if (role === 'COORDINADOR' && memberConfig.length > 0) {
-            const hasOvertime = memberConfig.some(i => i.id === View.OVERTIME);
-            // If we haven't overridden it yet (or if local storage old config loaded)
-            if (!hasOvertime) {
-                const newConfig = memberConfig.map(item => {
-                    // Replace Calendar with Team Calendar (Overtime)
-                    if (item.id === View.MEMBER_CALENDAR) {
-                        return { ...item, id: View.OVERTIME, label: 'Calendario Equipo', icon: Calendar, permKey: undefined };
-                    }
-                    // DO NOT Replace MEMBER_FILE. Keep it.
-                    return item;
-                });
+        const role = currentUser?.role || currentMember?.role || 'COCINA';
+        const perms = rolePermissions[role];
+        if (!perms || memberConfig.length === 0) return;
 
-                // Add FILES (All Files) if missing
-                if (!newConfig.some(i => i.id === View.FILES)) {
-                    newConfig.push({
-                        id: View.FILES,
-                        label: 'Expedientes',
-                        visible: true,
-                        order: 98,
-                        isHeader: false,
-                        // @ts-ignore
-                        item: { icon: FolderOpen }
-                    });
-                }
+        let needsUpdate = false;
+        const newConfig = [...memberConfig];
 
-                // Add Sanctions if missing
-                if (!newConfig.some(i => i.id === View.SANCTIONS)) {
-                    newConfig.push({
-                        id: View.SANCTIONS,
-                        label: 'Novedades',
-                        visible: true,
-                        order: 99,
-                        isHeader: false,
-                        // @ts-ignore
-                        item: { icon: AlertTriangle }
-                    });
-                }
-                setMemberConfig(newConfig);
-            }
+        // 1. Team Calendar (OVERTIME View)
+        // If user has 'memberViewTeamCalendar', ensure OVERTIME view is available
+        const hasTeamCal = perms.memberViewTeamCalendar;
+        const configHasTeamCal = newConfig.some(i => i.id === View.OVERTIME);
+        if (hasTeamCal && !configHasTeamCal) {
+            newConfig.push({
+                id: View.OVERTIME,
+                label: 'Calendario Equipo',
+                visible: true,
+                order: 90
+            });
+            needsUpdate = true;
         }
-    }, [currentUser, memberConfig]);
+
+        // 2. All Files (FILES View)
+        // If user has 'memberViewAllFiles', ensure FILES view is available
+        const hasAllFiles = perms.memberViewAllFiles;
+        const configHasFiles = newConfig.some(i => i.id === View.FILES);
+        if (hasAllFiles && !configHasFiles) {
+            newConfig.push({
+                id: View.FILES,
+                label: 'Expedientes',
+                visible: true,
+                order: 98
+            });
+            needsUpdate = true;
+        }
+
+        // 3. Novedades (SANCTIONS View)
+        // Kept for Coordinator or if has viewOps specifically
+        const hasOps = perms.viewOps || role === 'COORDINADOR';
+        const configHasSanctions = newConfig.some(i => i.id === View.SANCTIONS);
+        if (hasOps && !configHasSanctions) {
+            newConfig.push({
+                id: View.SANCTIONS,
+                label: 'Novedades',
+                visible: true,
+                order: 99
+            });
+            needsUpdate = true;
+        }
+
+        if (needsUpdate && setMemberConfig) {
+            setMemberConfig(newConfig);
+        }
+    }, [currentUser, currentMember, rolePermissions, memberConfig, setMemberConfig]);
 
     const handleSaveConfig = (newConfig: SidebarItemConfig[]) => {
         if (currentMember) {
@@ -289,8 +299,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
 
     const renderMemberSidebar = () => {
         const myRole = currentMember?.role || 'COCINA';
-        const myPermissions = rolePermissions[myRole] || [];
-        const hasPermission = (key: PermissionKey | undefined) => !key || myPermissions.includes(key);
+        const myPermissions = rolePermissions[myRole];
+
+        const hasPermission = (key: PermissionKey | undefined) => {
+            if (!key) return true;
+            if (!myPermissions) return false;
+            if (myPermissions.superAdmin) return true;
+
+            // Map PermissionKey to UserPermissions
+            switch (key) {
+                case 'canViewChecklist': return myPermissions.memberViewChecklist;
+                case 'canViewCalendar': return myPermissions.memberViewMyCalendar;
+                // Coordinator / Advanced keys
+                case 'canViewTeamCalendar': return myPermissions.memberViewTeamCalendar;
+                case 'canViewOtherFiles': return myPermissions.memberViewAllFiles;
+                // Unified Welfare
+                case 'canViewForum': return myPermissions.memberViewWelfare;
+                // Standard Modules
+                case 'canViewInventory': return myPermissions.viewInventory;
+                case 'canViewCash': return myPermissions.viewFinance;
+                case 'canViewSanctions': return myPermissions.viewOps || myPermissions.memberViewSanctions;
+                case 'canViewProfile': return true;
+                default: return false;
+            }
+        };
 
         return memberConfig.map(configItem => {
             if (!configItem.visible) return null;
@@ -298,9 +330,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
 
             // Fallbacks for Injected Admin Items
             if (!def) {
-                if (configItem.id === View.OVERTIME) def = { id: View.OVERTIME, label: 'Calendario Equipo', icon: Calendar, domId: 'mem-overtime' } as NavItemDef;
-                else if (configItem.id === View.FILES) def = { id: View.FILES, label: 'Expedientes', icon: FolderOpen, domId: 'mem-files' } as NavItemDef;
-                else if (configItem.id === View.SANCTIONS) def = { id: View.SANCTIONS, label: 'Gestión disciplinaria', icon: AlertTriangle, domId: 'mem-sanctions' } as NavItemDef;
+                if (configItem.id === View.OVERTIME) def = { id: View.OVERTIME, label: 'Calendario Equipo', icon: Calendar, domId: 'mem-overtime', permKey: 'canViewTeamCalendar' } as NavItemDef;
+                else if (configItem.id === View.FILES) def = { id: View.FILES, label: 'Expedientes', icon: FolderOpen, domId: 'mem-files', permKey: 'canViewOtherFiles' } as NavItemDef;
+                else if (configItem.id === View.SANCTIONS) def = { id: View.SANCTIONS, label: 'Novedades', icon: AlertTriangle, domId: 'mem-sanctions', permKey: 'canViewSanctions' } as NavItemDef;
             }
 
             if (!def) return null;

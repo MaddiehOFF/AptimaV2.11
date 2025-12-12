@@ -51,6 +51,26 @@ export interface Employee {
   // Advanced Payroll
   payrollStartDate?: string; // Date to start calculating payroll from (Reset feature)
   officialHours?: number; // Official daily hours (e.g. 8)
+
+  // Gamification / Merits
+  merits?: AssignedMerit[];
+}
+
+export interface MeritType {
+  id: string;
+  title: string;
+  description: string;
+  icon: string; // Icon name (Lucide) or Emoji char (Legacy)
+  color: string; // Hex code or Tailwind color class
+  value: number; // Importance level (1-5)
+}
+
+export interface AssignedMerit {
+  id: string;
+  meritTypeId: string;
+  assignedAt: string; // ISO Date
+  assignedBy: string; // User ID
+  note?: string; // Optional message
 }
 
 export interface Task {
@@ -225,7 +245,7 @@ export interface DeliverySchedule {
   dates: string[]; // ISO Dates
 }
 
-export type UserRole = 'ADMIN' | 'MANAGER' | 'COORDINADOR' | 'ENCARGADO' | 'CAJERO';
+export type UserRole = 'ADMIN' | 'EMPRESA' | 'GERENTE' | 'COORDINADOR' | 'JEFE_COCINA' | 'ADMINISTRATIVO' | 'MOSTRADOR' | 'COCINA' | 'REPARTIDOR' | 'ENCARGADO' | 'CAJERO' | string;
 
 // Granular Permissions System
 export interface UserPermissions {
@@ -261,6 +281,14 @@ export interface UserPermissions {
 
   // System
   superAdmin: boolean; // Manage Users, Global Settings
+
+  // Employee Portal (Member View) Permissions
+  memberViewMyCalendar: boolean; // 'Mi Calendario'
+  memberViewTeamCalendar: boolean; // 'Calendario Equipo'
+  memberViewAllFiles: boolean; // 'Expedientes' (See others)
+  memberViewChecklist: boolean; // 'Mi Check-List'
+  memberViewWelfare: boolean; // 'Muro Social'
+  memberViewSanctions: boolean; // 'Novedades/Sanctions'
 }
 
 export interface User {
@@ -486,6 +514,9 @@ export enum View {
   AI_REPORT = 'AI_REPORT',
   FORUM = 'FORUM',
 
+  // Gamification (Merits)
+  MERITS = 'MERITS',
+
   // Under Construction Group
   INVENTORY = 'INVENTORY',
   AI_FOCUS = 'AI_FOCUS',
@@ -536,11 +567,16 @@ export type PermissionKey =
   | 'canViewProducts' // Products management
   | 'canViewFinance' // Finance Dashboard (was generic)
   | 'canViewWallet' // Billetera
-  | 'canViewRoyalties';
+  | 'canViewRoyalties'
+  // Member Portal Specific
+  | 'canViewMyCalendar'
+  | 'canViewTeamCalendar'
+  | 'canViewOtherFiles'
+  | 'canViewWelfare';
 
-export interface RolePermissions {
-  [role: string]: PermissionKey[];
-}
+// Consolidated Role Permissions (Maps Role -> Granular Permissions Object)
+// This replaces the old array-based permissions for simpler checking
+export type RolePermissions = Record<string, UserPermissions>;
 
 export interface DashboardWidget {
   id: string;

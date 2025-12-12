@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Employee, OvertimeRecord, AbsenceRecord, Task, SanctionRecord, View, ForumPost, ChecklistSnapshot, CalendarEvent, DashboardWidget, RolePermissions, PermissionKey, EmployeeNotice, CashShift, InventorySession, WalletTransaction, PayrollMovement } from '../types';
+import { Employee, OvertimeRecord, AbsenceRecord, Task, SanctionRecord, View, ForumPost, ChecklistSnapshot, CalendarEvent, DashboardWidget, RolePermissions, PermissionKey, EmployeeNotice, CashShift, InventorySession, WalletTransaction, PayrollMovement, MeritType, AssignedMerit } from '../types';
+import { supabase } from '../supabaseClient';
 import { TaskChecklist } from './TaskChecklist';
-import { Clock, Wallet, AlertTriangle, Calendar, User as UserIcon, Bell, CreditCard, ChevronLeft, ChevronRight, Hash, Phone, MapPin, Building, Briefcase, CheckCircle2, UserCheck, X, Eye, EyeOff, Box, ArrowRight, Settings2, Megaphone, Siren } from 'lucide-react';
+import { Clock, Wallet, AlertTriangle, Calendar, User as UserIcon, Bell, CreditCard, ChevronLeft, ChevronRight, Hash, Phone, MapPin, Building, Briefcase, CheckCircle2, UserCheck, X, Eye, EyeOff, Box, ArrowRight, Settings2, Megaphone, Siren, Trophy } from 'lucide-react';
 import { AIReport } from './AIReport';
 import { RankBadge } from './EmployeeManagement';
 import { ForumBoard } from './ForumBoard';
@@ -10,6 +11,7 @@ import { ChecklistWidget, InventoryWidget, QuickProfileWidget, PendingPaymentWid
 import { ActivityFeedWidget, CalendarWidget } from './widgets/AdminWidgets';
 import { DashboardCustomizer } from './widgets/DashboardCustomizer';
 import { calculateAccruedSalary, getLedgerAccrual } from '../utils/payrollUtils';
+import { MeritIcon } from './MeritIcon';
 
 interface MemberViewProps {
     currentView: View;
@@ -56,10 +58,11 @@ const InfoItem = ({ icon: Icon, label, value }: { icon: any, label: string, valu
 
 const DEFAULT_MEMBER_WIDGETS: DashboardWidget[] = [
     { id: 'checklist', title: 'Checklist de Tareas', visible: true, order: 0 },
-    { id: 'inventory', title: 'Acceso a Inventario', visible: true, order: 1 },
-    { id: 'profile', title: 'Perfil Rápido', visible: true, order: 2 },
-    { id: 'pending_payment', title: 'Pendiente de Cobro', visible: true, order: 3 },
-    { id: 'next_payment', title: 'Próximo Pago', visible: true, order: 4 },
+    // { id: 'merits', title: 'Mis Logros', visible: true, order: 1 }, // REMOVED BY REQUEST
+    { id: 'inventory', title: 'Acceso a Inventario', visible: true, order: 2 },
+    { id: 'profile', title: 'Perfil Rápido', visible: true, order: 3 },
+    { id: 'pending_payment', title: 'Pendiente de Cobro', visible: true, order: 4 },
+    { id: 'next_payment', title: 'Próximo Pago', visible: true, order: 5 },
 ];
 
 export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, records, absences, sanctions, tasks, setTasks, posts, setPosts, setView, setChecklistSnapshots, checklistSnapshots, holidays = [], onUpdateSanction, calendarEvents = [], rolePermissions, onAlert, employees, notices, onMarkNoticeSeen, onApproveSanction, cashShifts, inventory, messages, transactions = [], payrollMovements = [] }) => {
@@ -86,6 +89,20 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
             return v.toString(16);
         });
     };
+
+    // Merits State
+    const [meritTypes, setMeritTypes] = useState<MeritType[]>([]);
+    const [viewingMerit, setViewingMerit] = useState<{ assigned: AssignedMerit, type: MeritType } | null>(null);
+
+    useEffect(() => {
+        const loadMeritTypes = async () => {
+            const { data } = await supabase.from('app_settings').select('data').eq('id', 'merit_types').single();
+            if (data && data.data && data.data.types) {
+                setMeritTypes(data.data.types);
+            }
+        };
+        loadMeritTypes();
+    }, []);
 
     const handleSendAlert = () => {
         if (!onAlert) return;
@@ -323,9 +340,32 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
     // Permission Check Helper
     const myRole = member.role || 'COCINA';
     const myPermissions = rolePermissions[myRole] || [];
-    const hasPermission = (key: PermissionKey) => myPermissions.includes(key);
+    // Helper for granular permissions
+    const hasPermission = (key: PermissionKey): boolean => {
+        const perms = rolePermissions[member.role];
+        if (!perms) return false;
+        if (perms.superAdmin) return true;
 
-    const renderWidget = (widget: DashboardWidget) => {
+        switch (key) {
+            case 'canViewHR': return perms.viewHr;
+            case 'canViewOvertime': return perms.viewOps;
+            case 'canViewChecklist': return perms.memberViewChecklist; // Updated
+            case 'canViewFinance': return perms.viewFinance;
+            case 'canViewCash': return perms.viewFinance;
+            case 'canViewBudgetRequests': return perms.approveFinance || perms.viewFinance;
+            case 'canViewInventory': return perms.viewInventory;
+            case 'canViewSuppliers': return perms.viewInventory;
+            case 'canViewProfile': return true;
+            case 'canViewCalendar': return perms.memberViewMyCalendar; // Updated
+            case 'canViewMyCalendar': return perms.memberViewMyCalendar; // New
+            case 'canViewTeamCalendar': return perms.memberViewTeamCalendar; // New
+            case 'canViewOtherFiles': return perms.memberViewAllFiles; // New
+            case 'canViewWelfare': return perms.memberViewWelfare; // New
+            case 'canViewForum': return perms.memberViewWelfare; // Forum is part of Welfare
+            case 'canViewCommunication': return true;
+            default: return false;
+        }
+    }; const renderWidget = (widget: DashboardWidget) => {
         if (!widget.visible) return null;
 
         switch (widget.id) {
@@ -348,6 +388,36 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
             case 'next_payment':
                 if (isPrivacyMode || !hasPermission('canViewFinancials') || member.paymentModality === 'DIARIO') return null; // Added Permission Check & DIARIO check
                 return <div key={widget.id} className="col-span-1 lg:col-span-2"><NextPaymentWidget member={member} safeDisplay={safeDisplay} isPrivacyMode={isPrivacyMode} /></div>;
+            case 'merits':
+                if (!member.merits || member.merits.length === 0) return null;
+                if (!hasPermission('canViewWelfare')) return null; // Check Permission
+                return (
+                    <div key={widget.id} className="col-span-1 bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/10 dark:to-orange-900/10 rounded-xl p-4 border border-yellow-200 dark:border-yellow-500/20 relative overflow-hidden group hover:shadow-lg transition-all">
+                        <div className="flex items-center justify-between mb-4 relative z-10">
+                            <h3 className="font-bold text-yellow-800 dark:text-yellow-500 flex items-center gap-2">
+                                <Trophy className="w-4 h-4" /> Mis Logros
+                            </h3>
+                            <span className="text-2xl font-black text-yellow-600 dark:text-yellow-400">{member.merits.length}</span>
+                        </div>
+                        <div className="flex gap-2 relative z-10">
+                            {member.merits.slice(-3).reverse().map((m, idx) => {
+                                const type = meritTypes.find(t => t.id === m.meritTypeId);
+                                if (!type) return null;
+                                return (
+                                    <div key={idx} className="w-8 h-8 rounded-full bg-white dark:bg-black/20 flex items-center justify-center text-lg shadow-sm border border-yellow-100 dark:border-yellow-500/10" title={type.title}>
+                                        <MeritIcon iconName={type.icon} className="w-4 h-4" color={type.color} />
+                                    </div>
+                                );
+                            })}
+                            {member.merits.length > 3 && (
+                                <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-500/20 flex items-center justify-center text-[10px] font-bold text-yellow-700 dark:text-yellow-500">
+                                    +{member.merits.length - 3}
+                                </div>
+                            )}
+                        </div>
+                        <Trophy className="absolute -right-2 -bottom-2 w-16 h-16 text-yellow-500/10 rotate-12 group-hover:rotate-0 transition-transform" />
+                    </div>
+                );
             default: return null;
         }
     }
@@ -367,7 +437,27 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
                                     Hola, {member.name.split(' ')[0]}
                                     <RankBadge role={member.role} />
                                 </h2>
-                                <p className="text-xs text-gray-500 dark:text-sushi-muted uppercase tracking-wider">{member.position}</p>
+                                <p className="text-xs text-gray-500 dark:text-sushi-muted uppercase tracking-wider mb-1">{member.position}</p>
+
+                                {/* Merits in Header */}
+                                {member.merits && member.merits.length > 0 && (
+                                    <div className="flex gap-1">
+                                        {member.merits.slice(-5).reverse().map((m, idx) => {
+                                            const type = meritTypes.find(t => t.id === m.meritTypeId);
+                                            if (!type) return null;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    title={type.title}
+                                                    onClick={() => setViewingMerit({ assigned: m, type })}
+                                                    className="hover:scale-110 transition-transform cursor-pointer"
+                                                >
+                                                    <MeritIcon iconName={type.icon} className="w-4 h-4" color={type.color} />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="flex gap-2 relative">
@@ -472,7 +562,7 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
                             </div>
 
                             {/* Calendar Section for Coordinator */}
-                            {member.role === 'COORDINADOR' && (
+                            {member.role === 'COORDINADOR' && hasPermission('canViewTeamCalendar') && (
                                 <div className="mt-4">
                                     <CalendarWidget
                                         events={calendarEvents.filter(e => e.visibility === 'ALL' || e.visibility === 'ADMIN')}
@@ -520,6 +610,45 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
                         onSave={handleSaveLayout}
                     />
                 </div>
+
+                {/* MERIT DETAIL MODAL */}
+                {viewingMerit && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white dark:bg-sushi-dark rounded-xl shadow-2xl max-w-sm w-full relative overflow-hidden border border-sushi-gold/30">
+                            {/* Header Gradient */}
+                            <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-sushi-gold/20 to-transparent pointer-events-none" />
+
+                            <button
+                                onClick={() => setViewingMerit(null)}
+                                className="absolute top-3 right-3 p-1 rounded-full bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors z-10"
+                            >
+                                <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                            </button>
+
+                            <div className="p-8 flex flex-col items-center text-center relative z-0">
+                                <div
+                                    className="w-20 h-20 rounded-full bg-white dark:bg-black/30 flex items-center justify-center text-4xl shadow-lg border-2 border-sushi-gold/20 mb-4"
+                                    style={{ boxShadow: `0 0 20px ${viewingMerit.type.color}40`, borderColor: viewingMerit.type.color }}
+                                >
+                                    <MeritIcon iconName={viewingMerit.type.icon} className="w-10 h-10" color={viewingMerit.type.color} />
+                                </div>
+
+                                <h3 className="text-xl font-serif font-bold text-gray-900 dark:text-white mb-2" style={{ color: viewingMerit.type.color }}>
+                                    {viewingMerit.type.title}
+                                </h3>
+
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400 dark:text-sushi-muted mb-4 border border-gray-200 dark:border-white/10 px-2 py-0.5 rounded-full">
+                                    {new Date(viewingMerit.assigned.assignedAt).toLocaleDateString()}
+                                </span>
+
+                                <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                                    {viewingMerit.type.description}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* ALERT MODAL */}
                 {isAlertModalOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -573,6 +702,7 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
     }
 
     if (currentView === View.MEMBER_FORUM && posts && setPosts) {
+        if (!hasPermission('canViewWelfare')) return <div className="p-10 text-center text-gray-500">Esta función no está habilitada para tu rol.</div>;
         return (
             <ForumBoard
                 posts={posts}
@@ -584,6 +714,7 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
     }
 
     if (currentView === View.MEMBER_TASKS) {
+        if (!hasPermission('canViewChecklist')) return <div className="p-10 text-center text-gray-500">Esta función no está habilitada para tu rol.</div>;
         return (
             <div className="max-w-2xl mx-auto pt-10 animate-fade-in">
                 <TaskChecklist
@@ -598,6 +729,7 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
     }
 
     if (currentView === View.MEMBER_CALENDAR) {
+        if (!hasPermission('canViewMyCalendar')) return <div className="p-10 text-center text-gray-500">Esta función no está habilitada para tu rol.</div>;
         return (
             <div className="bg-white dark:bg-sushi-dark p-6 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm animate-fade-in">
                 <div className="flex justify-between items-center mb-6">
@@ -652,6 +784,46 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
                         </div>
                     </div>
 
+
+
+                    {/* MERITS SECTION */}
+                    <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/10 dark:to-orange-900/10 border border-yellow-200 dark:border-yellow-500/20 rounded-xl p-6 mb-8 relative overflow-hidden">
+                        <div className="relative z-10">
+                            <h3 className="font-bold text-yellow-800 dark:text-yellow-500 flex items-center gap-2 mb-4">
+                                <Trophy className="w-5 h-5" />
+                                Mis Méritos y Reconocimientos
+                            </h3>
+
+                            {!member.merits || member.merits.length === 0 ? (
+                                <p className="text-sm text-yellow-700/60 dark:text-yellow-500/50 italic">Aún no has recibido reconocimientos.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-4">
+                                    {member.merits.map((m, idx) => {
+                                        const type = meritTypes.find(t => t.id === m.meritTypeId);
+                                        if (!type) return null;
+                                        return (
+                                            <div key={idx} className="group relative bg-white dark:bg-black/20 p-3 rounded-lg border border-yellow-100 dark:border-yellow-500/10 hover:scale-105 transition-transform cursor-help">
+                                                <div className="flex justify-center mb-1 text-3xl" style={{ color: type.color }}>
+                                                    <MeritIcon iconName={type.icon} className="w-8 h-8" />
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-[10px] font-bold uppercase text-gray-500 dark:text-sushi-muted">{new Date(m.assignedAt).toLocaleDateString()}</p>
+                                                </div>
+
+                                                {/* Tooltip */}
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-gray-900 text-white text-xs p-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+                                                    <p className="font-bold text-sushi-gold mb-1" style={{ color: type.color }}>{type.title}</p>
+                                                    <p>{type.description}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <Trophy className="absolute -right-4 -bottom-4 w-32 h-32 text-yellow-500/5 rotate-12" />
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-4">
                             <h4 className="font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-white/10 pb-2">Información Personal</h4>
@@ -684,88 +856,92 @@ export const MemberView: React.FC<MemberViewProps> = ({ currentView, member, rec
 
 
                 {/* SANCTIONS HISTORY SECTION */}
-                {mySanctions.length > 0 && (
-                    <div className="bg-white dark:bg-sushi-dark p-8 rounded-xl border border-red-200/50 dark:border-red-500/10 shadow-sm">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                            <AlertTriangle className="w-5 h-5 text-red-500" />
-                            Historial de Sanciones/Avisos
-                        </h3>
-                        <div className="space-y-4">
-                            {mySanctions.map(s => (
-                                <div
-                                    key={s.id}
-                                    onClick={() => handleSanctionClick(s)}
-                                    className="p-4 border border-red-100 dark:border-red-500/20 bg-red-50/50 dark:bg-red-500/5 rounded-lg flex justify-between items-center cursor-pointer hover:bg-red-100 dark:hover:bg-red-500/10 transition-colors group"
-                                >
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-bold text-red-700 dark:text-red-400">{s.type.replace('_', ' ')}</span>
-                                            <span className="text-xs text-gray-500 dark:text-sushi-muted">{new Date(s.date).toLocaleDateString()}</span>
+                {
+                    mySanctions.length > 0 && (
+                        <div className="bg-white dark:bg-sushi-dark p-8 rounded-xl border border-red-200/50 dark:border-red-500/10 shadow-sm">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                                <AlertTriangle className="w-5 h-5 text-red-500" />
+                                Historial de Sanciones/Avisos
+                            </h3>
+                            <div className="space-y-4">
+                                {mySanctions.map(s => (
+                                    <div
+                                        key={s.id}
+                                        onClick={() => handleSanctionClick(s)}
+                                        className="p-4 border border-red-100 dark:border-red-500/20 bg-red-50/50 dark:bg-red-500/5 rounded-lg flex justify-between items-center cursor-pointer hover:bg-red-100 dark:hover:bg-red-500/10 transition-colors group"
+                                    >
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-red-700 dark:text-red-400">{s.type.replace('_', ' ')}</span>
+                                                <span className="text-xs text-gray-500 dark:text-sushi-muted">{new Date(s.date).toLocaleDateString()}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{s.description}</p>
+                                            {s.employeeResponse && (
+                                                <p className="text-xs text-green-600 dark:text-green-500 mt-2 font-medium flex items-center gap-1">
+                                                    <CheckCircle2 className="w-3 h-3" />
+                                                    Descargo enviado: "{s.employeeResponse.substring(0, 30)}..."
+                                                </p>
+                                            )}
+                                            {!s.employeeResponse && (
+                                                <p className="text-xs text-sushi-gold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    Clic para añadir descargo
+                                                </p>
+                                            )}
                                         </div>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{s.description}</p>
-                                        {s.employeeResponse && (
-                                            <p className="text-xs text-green-600 dark:text-green-500 mt-2 font-medium flex items-center gap-1">
-                                                <CheckCircle2 className="w-3 h-3" />
-                                                Descargo enviado: "{s.employeeResponse.substring(0, 30)}..."
-                                            </p>
-                                        )}
-                                        {!s.employeeResponse && (
-                                            <p className="text-xs text-sushi-gold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                Clic para añadir descargo
-                                            </p>
-                                        )}
+                                        {s.amount && <span className="font-mono text-red-600 font-bold">-{formatMoney(s.amount)}</span>}
                                     </div>
-                                    {s.amount && <span className="font-mono text-red-600 font-bold">-{formatMoney(s.amount)}</span>}
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* SANCTION DESCAGO MODAL */}
-                {selectedSanction && (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                        <div className="bg-white dark:bg-sushi-dark w-full max-w-md rounded-xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 animate-fade-in-up">
-                            <div className="p-6">
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Descargo de Sanción</h3>
-                                <div className="p-4 bg-gray-50 dark:bg-black/20 rounded-lg mb-4">
-                                    <p className="text-xs text-gray-500 uppercase font-bold text-red-500">{selectedSanction.type}</p>
-                                    <p className="text-gray-800 dark:text-gray-200 text-sm mt-1">{selectedSanction.description}</p>
-                                    <p className="text-xs text-gray-400 mt-2">{selectedSanction.date}</p>
-                                </div>
+                {
+                    selectedSanction && (
+                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white dark:bg-sushi-dark w-full max-w-md rounded-xl shadow-2xl overflow-hidden border border-gray-200 dark:border-white/10 animate-fade-in-up">
+                                <div className="p-6">
+                                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Descargo de Sanción</h3>
+                                    <div className="p-4 bg-gray-50 dark:bg-black/20 rounded-lg mb-4">
+                                        <p className="text-xs text-gray-500 uppercase font-bold text-red-500">{selectedSanction.type}</p>
+                                        <p className="text-gray-800 dark:text-gray-200 text-sm mt-1">{selectedSanction.description}</p>
+                                        <p className="text-xs text-gray-400 mt-2">{selectedSanction.date}</p>
+                                    </div>
 
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Tu respuesta / Descargo
-                                </label>
-                                <textarea
-                                    value={sanctionResponse}
-                                    onChange={(e) => setSanctionResponse(e.target.value)}
-                                    className="w-full h-32 p-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg focus:outline-none focus:border-sushi-gold resize-none"
-                                    placeholder="Escribe aquí tu descargo..."
-                                />
-                            </div>
-                            <div className="p-4 bg-gray-50 dark:bg-black/40 flex justify-end gap-3">
-                                <button
-                                    onClick={() => setSelectedSanction(null)}
-                                    className="px-4 py-2 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-white/5 rounded-lg transition-colors"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={submitSanctionResponse}
-                                    className="px-4 py-2 bg-sushi-gold text-sushi-black font-medium rounded-lg hover:bg-sushi-goldhover transition-colors"
-                                >
-                                    Enviar Descargo
-                                </button>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Tu respuesta / Descargo
+                                    </label>
+                                    <textarea
+                                        value={sanctionResponse}
+                                        onChange={(e) => setSanctionResponse(e.target.value)}
+                                        className="w-full h-32 p-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg focus:outline-none focus:border-sushi-gold resize-none"
+                                        placeholder="Escribe aquí tu descargo..."
+                                    />
+                                </div>
+                                <div className="p-4 bg-gray-50 dark:bg-black/40 flex justify-end gap-3">
+                                    <button
+                                        onClick={() => setSelectedSanction(null)}
+                                        className="px-4 py-2 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-white/5 rounded-lg transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={submitSanctionResponse}
+                                        className="px-4 py-2 bg-sushi-gold text-sushi-black font-medium rounded-lg hover:bg-sushi-goldhover transition-colors"
+                                    >
+                                        Enviar Descargo
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 <AIReport employees={[member]} records={myRecords} sanctions={mySanctions} />
 
 
-            </div>
+            </div >
         )
     }
 

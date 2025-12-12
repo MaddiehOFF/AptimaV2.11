@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserPermissions, UserRole } from '../types';
-import { UserCog, Trash2, Shield, User as UserIcon, Mail, Clock, Check, Lock, Grid, Users, Wallet, Archive, Box, Edit3, X } from 'lucide-react';
+import { UserCog, Trash2, Shield, User as UserIcon, Mail, Clock, Check, Lock, Edit3, X, Archive, Wallet, Box, Users } from 'lucide-react';
 import { playSound } from '../utils/soundUtils';
 import { exportUserCredentialsPDF } from '../utils/exportUtils';
 import { ConfirmationModal } from './common/ConfirmationModal';
@@ -10,27 +10,49 @@ import { supabase } from '../supabaseClient';
 interface UserManagementProps {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
-  currentUser: User;
+  currentUser: User | null;
+  customRoles: string[];
+  roleDefinitions: Record<string, UserPermissions>;
 }
 
-export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, currentUser }) => {
-  const [newUser, setNewUser] = useState({
+export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, currentUser, customRoles, roleDefinitions }) => {
+  const [isDarkMode] = useState(() => localStorage.getItem('sushiblack_theme') === 'dark');
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showModal, setShowModal] = useState(false);
+
+  // Combine System Roles + Custom Roles
+  // SYNCED WITH EMPLOYEE ROLES
+  const SYSTEM_ROLES = ['ADMIN', 'EMPRESA', 'GERENTE', 'COORDINADOR', 'JEFE_COCINA', 'ADMINISTRATIVO', 'MOSTRADOR', 'COCINA', 'REPARTIDOR'];
+  const AVAILABLE_ROLES = [...SYSTEM_ROLES, ...customRoles];
+
+  const ROLE_LABELS: Record<string, string> = {
+    'ADMIN': 'Administrador del Sistema',
+    'EMPRESA': 'Dueño / Empresa',
+    'GERENTE': 'Gerente',
+    'COORDINADOR': 'Coordinador',
+    'JEFE_COCINA': 'Jefe de Cocina',
+    'ADMINISTRATIVO': 'Administrativo',
+    'MOSTRADOR': 'Mostrador',
+    'COCINA': 'Cocina',
+    'REPARTIDOR': 'Delivery / Repartidor'
+  };
+
+  const [newUser, setNewUser] = useState<Partial<User>>({
     username: '',
-    email: '',
     password: '',
+    email: '',
     name: '',
-    role: 'MANAGER'
+    role: 'CAJERO',
   });
 
   const [permissions, setPermissions] = useState<UserPermissions>({
-    viewHr: true, manageHr: false, createHr: false, editHr: false, deleteHr: false,
-    viewOps: true, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
+    viewHr: false, manageHr: false, createHr: false, editHr: false, deleteHr: false,
+    viewOps: false, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
     viewFinance: false, manageFinance: false, createFinance: false, editFinance: false, deleteFinance: false, approveFinance: false,
-    viewInventory: true, manageInventory: true, createInventory: false, editInventory: false, deleteInventory: false,
+    viewInventory: false, manageInventory: false, createInventory: false, editInventory: false, deleteInventory: false,
     superAdmin: false
   });
 
-  // Admin Tags State
   const [tags, setTags] = useState<string[]>([]);
   const addTag = (tag: string) => setTags(prev => [...prev, tag]);
   const removeTag = (tag: string) => setTags(prev => prev.filter(t => t !== tag));
@@ -47,7 +69,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
     onConfirm: () => { },
   });
 
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const handleRoleChange = (role: string) => {
+    setNewUser(prev => ({ ...prev, role: role as UserRole }));
+
+    // Find definition for this role
+    const def = roleDefinitions[role];
+    if (def) {
+      setPermissions({ ...def });
+    }
+  };
 
   const startEditing = (user: User) => {
     setEditingUser(user);
@@ -60,70 +90,29 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
     });
     setPermissions(user.permissions);
     setTags(user.tags || []);
+    setShowModal(true);
   };
-
-  // Auto-update permissions when role changes
-  React.useEffect(() => {
-    // Try to load from configured defaults in Settings
-    const savedDefaults = localStorage.getItem('sushiblack_user_role_defaults');
-    if (savedDefaults) {
-      try {
-        const defaults = JSON.parse(savedDefaults);
-        const roleDefaults = defaults[newUser.role as UserRole];
-        if (roleDefaults) {
-          setPermissions(roleDefaults);
-          return;
-        }
-      } catch (e) {
-        console.error("Error loading permission defaults", e);
-      }
-    }
-
-    // Fallback Hardcoded Defaults if no configuration found
-    if (newUser.role === 'ADMIN') {
-      setPermissions({
-        viewHr: true, manageHr: true, createHr: true, editHr: true, deleteHr: true,
-        viewOps: true, manageOps: true, createOps: true, editOps: true, deleteOps: true, approveOps: true,
-        viewFinance: true, manageFinance: true, createFinance: true, editFinance: true, deleteFinance: true, approveFinance: true,
-        viewInventory: true, manageInventory: true, createInventory: true, editInventory: true, deleteInventory: true,
-        superAdmin: true
-      });
-    } else if (newUser.role === 'COORDINADOR') {
-      setPermissions(prev => ({
-        ...prev,
-        viewHr: true, manageHr: false, createHr: false, editHr: false, deleteHr: false,
-        viewOps: true, manageOps: false, createOps: true, editOps: false, deleteOps: false, approveOps: true,
-        viewFinance: false, manageFinance: false, createFinance: false, editFinance: false, deleteFinance: false, approveFinance: false,
-        viewInventory: true, manageInventory: true, createInventory: true, editInventory: true, deleteInventory: false,
-        superAdmin: false
-      }));
-    }
-  }, [newUser.role]);
 
   const cancelEditing = () => {
     setEditingUser(null);
-    setNewUser({ username: '', email: '', password: '', name: '', role: 'MANAGER' });
+    setNewUser({ username: '', email: '', password: '', name: '', role: 'CAJERO' });
     setPermissions({
-      viewHr: true, manageHr: false, createHr: false, editHr: false, deleteHr: false,
-      viewOps: true, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
+      viewHr: false, manageHr: false, createHr: false, editHr: false, deleteHr: false,
+      viewOps: false, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
       viewFinance: false, manageFinance: false, createFinance: false, editFinance: false, deleteFinance: false, approveFinance: false,
-      viewInventory: true, manageInventory: true, createInventory: false, editInventory: false, deleteInventory: false,
+      viewInventory: false, manageInventory: false, createInventory: false, editInventory: false, deleteInventory: false,
       superAdmin: false
     });
     setTags([]);
+    setShowModal(false);
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // VALIDATIONS
-    if (!newUser.username) return;
-    if (!editingUser && !newUser.password) return; // Password required for new users
-
-    // Check username uniqueness
-    if (users.some(u => u.username === newUser.username && u.id !== editingUser?.id)) {
-      alert('El nombre de usuario ya existe');
-      playSound('ERROR');
+    if (!newUser.username || !newUser.name) return;
+    // Password required for new users
+    if (!editingUser && !newUser.password) {
+      alert("La contraseña es obligatoria para nuevos usuarios");
       return;
     }
 
@@ -132,13 +121,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
         // UPDATE MODE
         const updatedUser: User = {
           ...editingUser,
-          username: newUser.username,
-          email: newUser.email,
-          name: newUser.name,
-          password: newUser.password || editingUser.password, // Keep old password if blank
-          role: newUser.role as UserRole, // Use selected role
+          username: newUser.username!,
+          email: newUser.email!,
+          name: newUser.name!,
+          password: newUser.password || editingUser.password,
+          role: newUser.role as UserRole,
           permissions: permissions,
-          tags: newUser.role === 'ADMIN' ? tags : [] // Only admins have tags for now
+          tags: newUser.role === 'ADMIN' ? tags : []
         };
 
         const { error } = await supabase
@@ -163,28 +152,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
         cancelEditing();
       } else {
         // CREATE MODE
+        // Check uniqueness
+        if (users.some(u => u.username === newUser.username)) {
+          alert('El nombre de usuario ya existe');
+          return;
+        }
+
         const user: User = {
           id: crypto.randomUUID(),
-          ...newUser,
-          role: newUser.role as UserRole, // Use selected role
+          username: newUser.username!,
+          email: newUser.email || '',
+          name: newUser.name!,
+          password: newUser.password!,
+          role: newUser.role as UserRole,
           permissions: permissions,
           tags: newUser.role === 'ADMIN' ? tags : []
         };
 
         const { error } = await supabase
           .from('app_users')
-          .insert([{
-            id: user.id,
-            data: {
-              username: user.username,
-              email: user.email,
-              name: user.name,
-              password: user.password,
-              role: user.role,
-              permissions: user.permissions,
-              tags: user.tags
-            }
-          }]);
+          .insert([{ id: user.id, data: user }]);
 
         if (error) throw error;
 
@@ -194,12 +181,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
       }
     } catch (error) {
       console.error('Error saving user:', error);
-      alert('Error al guardar el usuario en la base de datos.');
+      alert('Error al guardar el usuario.');
       playSound('ERROR');
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (!currentUser) return;
     if (id === currentUser.id) {
       alert("No puedes eliminar tu propio usuario.");
       return;
@@ -236,7 +224,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-fade-in">
       {/* List Users */}
       <div>
-        <h2 className="text-3xl font-serif text-gray-900 dark:text-white mb-6">Gestión de Accesos</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-serif text-gray-900 dark:text-white">Gestión de Accesos</h2>
+          <button
+            onClick={() => { cancelEditing(); setShowModal(true); }}
+            className="lg:hidden bg-sushi-gold p-2 rounded-full shadow-lg"
+          >
+            <UserCog className="w-6 h-6 text-sushi-black" />
+          </button>
+        </div>
+
         <div className="space-y-4">
           {users.map(u => (
             <div key={u.id} className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 p-5 rounded-xl flex items-center justify-between group hover:border-sushi-gold/30 transition-all shadow-sm">
@@ -269,8 +266,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {/* Protection Logic: Only show Edit/Delete if not target is admin OR if current user IS admin */}
-                {(u.username !== 'admin' || currentUser.username === 'admin') && (
+                {currentUser && (u.username !== 'admin' || currentUser.username === 'admin') && (
                   <>
                     <button
                       onClick={() => startEditing(u)}
@@ -279,7 +275,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
                     >
                       <Edit3 className="w-5 h-5" />
                     </button>
-                    {/* Add Export Button (Only Self or SuperAdmin) */}
                     {(currentUser.id === u.id || currentUser.permissions.superAdmin) && (
                       <button
                         onClick={() => exportUserCredentialsPDF(u)}
@@ -307,186 +302,194 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
         </div>
       </div>
 
-      {/* Create User Form */}
-      <div className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 p-8 rounded-xl h-fit shadow-xl">
-        <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/10 pb-4">
-          <UserCog className="w-6 h-6 text-sushi-gold" />
-          <h3 className="text-xl font-medium text-gray-900 dark:text-white">{editingUser ? 'Editar Usuario' : 'Crear Nuevo Perfil'}</h3>
-        </div>
+      {/* Create/Edit User Form (Modal on Mobile, Fixed on Desktop) */}
+      <div className={`
+        fixed inset-0 z-50 lg:static lg:z-auto bg-black/50 lg:bg-transparent flex items-center justify-center p-4 lg:p-0
+        ${!showModal ? 'hidden lg:block' : ''}
+      `}>
+        <div className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 p-8 rounded-xl h-fit shadow-xl w-full max-w-2xl lg:max-w-none relative animate-slide-up">
 
-        <form onSubmit={handleAddUser} className="space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Nombre Real</label>
-              <input
-                type="text"
-                required
-                value={newUser.name}
-                onChange={e => setNewUser({ ...newUser, name: e.target.value })}
-                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors"
-                placeholder="Ej. Martín Gomez"
-              />
-            </div>
+          {/* Close Button Mobile */}
+          <button onClick={() => setShowModal(false)} className="lg:hidden absolute top-4 right-4 text-gray-400 hover:text-white"><X /></button>
 
-            <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center gap-2 mb-6 border-b border-gray-200 dark:border-white/10 pb-4">
+            <UserCog className="w-6 h-6 text-sushi-gold" />
+            <h3 className="text-xl font-medium text-gray-900 dark:text-white">{editingUser ? 'Editar Usuario' : 'Crear Nuevo Perfil'}</h3>
+          </div>
+
+          <form onSubmit={handleSaveUser} className="space-y-6">
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Usuario</label>
+                <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Nombre Real</label>
                 <input
                   type="text"
                   required
-                  value={newUser.username}
-                  onChange={e => setNewUser({ ...newUser, username: e.target.value })}
+                  value={newUser.name}
+                  onChange={e => setNewUser({ ...newUser, name: e.target.value })}
                   className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors"
-                  placeholder="mgomez"
+                  placeholder="Ej. Martín Gomez"
                 />
               </div>
-              <div>
-                <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Contraseña</label>
-                <input
-                  type="password"
-                  required={!editingUser}
-                  value={newUser.password}
-                  onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors"
-                  placeholder={editingUser ? "Dejar en blanco para mantener actual" : "••••••"}
-                />
-              </div>
-            </div>
-          </div>
 
-          <div className="mt-4">
-            <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Rol del Usuario</label>
-            <select
-              value={newUser.role}
-              onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-              className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors appearance-none"
-            >
-              <option value="ADMIN">Administrador (Acceso Total)</option>
-              <option value="MANAGER">Manager / Gerente</option>
-              <option value="COORDINADOR">Coordinador de Equipo</option>
-              <option value="ENCARGADO">Encargado de Turno</option>
-              <option value="CAJERO">Cajero / Admin Básico</option>
-            </select>
-          </div>
-
-          {/* ADMIN TAGS SYSTEM */}
-          {newUser.role === 'ADMIN' && (
-            <div className="mt-4">
-              <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-2">Etiquetas de Sistema</label>
-              <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-lg border border-gray-200 dark:border-white/5">
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {tags.filter(t => t !== 'CUENTA_ADMINISTRADORA').map(tag => (
-                    <span key={tag} className="bg-sushi-gold/20 text-yellow-700 dark:text-sushi-gold border border-sushi-gold/30 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                      {tag}
-                      <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value && !tags.includes(e.target.value)) addTag(e.target.value);
-                      e.target.value = '';
-                    }}
-                    className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded px-3 py-2 text-sm outline-none focus:border-sushi-gold"
-                  >
-                    <option value="">+ Agregar Etiqueta...</option>
-                    <option value="FINANZAS">FINANZAS</option>
-                    <option value="INSUMOS">INSUMOS</option>
-                    <option value="RECURSOS_HUMANOS">RECURSOS HUMANOS</option>
-                    <option value="CEO">CEO</option>
-                    <option value="GERENCIA">GERENCIA</option>
-                    <option value="COCINA">COCINA</option>
-                    <option value="BARRA">BARRA</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="border-t border-gray-200 dark:border-white/10 pt-4">
-            <div className="flex items-center gap-2 mb-4">
-              <Lock className="w-4 h-4 text-sushi-gold" />
-              <label className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Matriz de Permisos</label>
-            </div>
-
-            {/* Permission Matrix */}
-            {/* Permission Matrix */}
-            <div className="bg-gray-50 dark:bg-black/20 rounded-lg p-4 border border-gray-200 dark:border-white/5 overflow-x-auto">
-              <div className="grid grid-cols-6 gap-2 mb-2 text-[10px] uppercase font-bold text-gray-500 dark:text-sushi-muted border-b border-gray-200 dark:border-white/5 pb-2 min-w-[500px]">
-                <span className="col-span-1">Módulo</span>
-                <span className="text-center">Ver</span>
-                <span className="text-center">Crear</span>
-                <span className="text-center">Editar</span>
-                <span className="text-center">Borrar</span>
-                <span className="text-center">Aprobar</span>
-              </div>
-
-              <GranularPermissionRow
-                label="RRHH"
-                icon={Users}
-                baseKey="Hr"
-                permissions={permissions}
-                toggle={togglePermission}
-              />
-              <GranularPermissionRow
-                label="Operaciones"
-                icon={Clock}
-                baseKey="Ops"
-                permissions={permissions}
-                toggle={togglePermission}
-                hasApprove
-              />
-              <GranularPermissionRow
-                label="Finanzas"
-                icon={Wallet}
-                baseKey="Finance"
-                permissions={permissions}
-                toggle={togglePermission}
-                hasApprove
-              />
-              <GranularPermissionRow
-                label="Inventario"
-                icon={Box}
-                baseKey="Inventory"
-                permissions={permissions}
-                toggle={togglePermission}
-              />
-            </div>
-
-            <div className="mt-4 flex items-center justify-between p-3 bg-sushi-gold/10 rounded-lg border border-sushi-gold/30">
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-sushi-gold" />
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-xs font-bold text-gray-900 dark:text-white uppercase">Super Admin</p>
-                  <p className="text-[10px] text-gray-500 dark:text-sushi-muted">Acceso total + Gestión de Usuarios</p>
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Usuario</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUser.username}
+                    onChange={e => setNewUser({ ...newUser, username: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors"
+                    placeholder="mgomez"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Contraseña</label>
+                  <input
+                    type="password"
+                    required={!editingUser}
+                    value={newUser.password}
+                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                    className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors"
+                    placeholder={editingUser ? "Dejar en blanco para mantener actual" : "••••••"}
+                  />
                 </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={permissions.superAdmin}
-                  onChange={() => togglePermission('superAdmin')}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-white/10 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sushi-gold"></div>
-              </label>
             </div>
-          </div>
 
-          <div className="flex gap-2 mt-2">
-            {editingUser && (
+            <div className="mt-4">
+              <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-1">Rol del Usuario</label>
+              <select
+                value={newUser.role}
+                onChange={e => handleRoleChange(e.target.value)}
+                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg py-3 px-4 text-gray-900 dark:text-white focus:outline-none focus:border-sushi-gold transition-colors appearance-none"
+              >
+                {AVAILABLE_ROLES.map(role => (
+                  <option key={role} value={role}>{ROLE_LABELS[role] || role.replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-gray-400 mt-1 pl-1 italic">
+                Seleccionar un rol aplicará automáticamente los permisos predeterminados definidos en Configuración.
+              </p>
+            </div>
+
+            {/* ADMIN TAGS SYSTEM */}
+            {newUser.role === 'ADMIN' && (
+              <div className="mt-4">
+                <label className="block text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted mb-2">Etiquetas de Sistema</label>
+                <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-lg border border-gray-200 dark:border-white/5">
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {tags.filter(t => t !== 'CUENTA_ADMINISTRADORA').map(tag => (
+                      <span key={tag} className="bg-sushi-gold/20 text-yellow-700 dark:text-sushi-gold border border-sushi-gold/30 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                        {tag}
+                        <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value && !tags.includes(e.target.value)) addTag(e.target.value);
+                        e.target.value = '';
+                      }}
+                      className="flex-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded px-3 py-2 text-sm outline-none focus:border-sushi-gold"
+                    >
+                      <option value="">+ Agregar Etiqueta...</option>
+                      <option value="FINANZAS">FINANZAS</option>
+                      <option value="INSUMOS">INSUMOS</option>
+                      <option value="RECURSOS_HUMANOS">RECURSOS HUMANOS</option>
+                      <option value="CEO">CEO</option>
+                      <option value="GERENCIA">GERENCIA</option>
+                      <option value="COCINA">COCINA</option>
+                      <option value="BARRA">BARRA</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-gray-200 dark:border-white/10 pt-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Lock className="w-4 h-4 text-sushi-gold" />
+                <label className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Matriz de Permisos (Personalizable)</label>
+              </div>
+
+              {/* Permission Matrix */}
+              <div className="bg-gray-50 dark:bg-black/20 rounded-lg p-4 border border-gray-200 dark:border-white/5 overflow-x-auto">
+                <div className="grid grid-cols-6 gap-2 mb-2 text-[10px] uppercase font-bold text-gray-500 dark:text-sushi-muted border-b border-gray-200 dark:border-white/5 pb-2 min-w-[500px]">
+                  <span className="col-span-1">Módulo</span>
+                  <span className="text-center">Ver</span>
+                  <span className="text-center">Crear</span>
+                  <span className="text-center">Editar</span>
+                  <span className="text-center">Borrar</span>
+                  <span className="text-center">Aprobar</span>
+                </div>
+
+                <GranularPermissionRow
+                  label="RRHH"
+                  icon={Users}
+                  baseKey="Hr"
+                  permissions={permissions}
+                  toggle={togglePermission}
+                />
+                <GranularPermissionRow
+                  label="Operaciones"
+                  icon={Clock}
+                  baseKey="Ops"
+                  permissions={permissions}
+                  toggle={togglePermission}
+                  hasApprove
+                />
+                <GranularPermissionRow
+                  label="Finanzas"
+                  icon={Wallet}
+                  baseKey="Finance"
+                  permissions={permissions}
+                  toggle={togglePermission}
+                  hasApprove
+                />
+                <GranularPermissionRow
+                  label="Inventario"
+                  icon={Box}
+                  baseKey="Inventory"
+                  permissions={permissions}
+                  toggle={togglePermission}
+                />
+              </div>
+
+              <div className="mt-4 flex items-center justify-between p-3 bg-sushi-gold/10 rounded-lg border border-sushi-gold/30">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-sushi-gold" />
+                  <div>
+                    <p className="text-xs font-bold text-gray-900 dark:text-white uppercase">Super Admin</p>
+                    <p className="text-[10px] text-gray-500 dark:text-sushi-muted">Acceso total + Gestión de Usuarios</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={permissions.superAdmin}
+                    onChange={() => togglePermission('superAdmin')}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-white/10 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sushi-gold"></div>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-2">
               <button type="button" onClick={cancelEditing} className="w-full bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300 font-bold py-3 rounded-lg hover:bg-gray-300 dark:hover:bg-white/20 transition-colors">
                 Cancelar
               </button>
-            )}
-            <button type="submit" className="w-full bg-sushi-gold text-sushi-black font-bold py-3 rounded-lg hover:bg-sushi-goldhover shadow-lg shadow-sushi-gold/10 transition-colors flex items-center justify-center gap-2 transform active:scale-95">
-              <Check className="w-5 h-5" />
-              {editingUser ? 'Guardar Cambios' : 'Registrar Usuario'}
-            </button>
-          </div>
-        </form>
+              <button type="submit" className="w-full bg-sushi-gold text-sushi-black font-bold py-3 rounded-lg hover:bg-sushi-goldhover shadow-lg shadow-sushi-gold/10 transition-colors flex items-center justify-center gap-2 transform active:scale-95">
+                <Check className="w-5 h-5" />
+                {editingUser ? 'Guardar Cambios' : 'Registrar Usuario'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
+
       {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
@@ -501,7 +504,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
   );
 };
 
-// Helper Row Component
 // Helper Row Component
 const GranularPermissionRow = ({ label, icon: Icon, baseKey, permissions, toggle, hasApprove }: any) => {
   // Construct keys dynamically

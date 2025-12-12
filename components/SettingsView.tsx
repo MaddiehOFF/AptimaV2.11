@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { RolePermissions, PermissionKey, EmployeeRole, UserRole, UserPermissions } from '../types';
-import { Settings, Shield, Plus, Trash2, Box, Wallet, Lock, Save, Briefcase, User, FileText, CheckSquare, Calendar, MessageCircle, Mail, Download, Upload, ChevronDown, ChevronUp, Clock, Truck, DollarSign } from 'lucide-react';
+import { Settings, Shield, Plus, Trash2, Box, Wallet, Lock, Save, Briefcase, User, FileText, CheckSquare, Calendar, MessageCircle, Mail, Download, Upload, ChevronDown, ChevronUp, Clock, Truck, DollarSign, Trophy } from 'lucide-react';
 import { playSound } from '../utils/soundUtils';
 import { supabase } from '../supabaseClient';
 import { useSupabaseCollection } from '../hooks/useSupabase';
@@ -9,14 +9,16 @@ import { generateUserManual } from '../utils/manualGenerator';
 import { changelogData } from './changelogData';
 import { exportChangelogPDF } from '../utils/changelogExporter';
 import { ConfirmationModal } from './common/ConfirmationModal';
+import { MeritSettings } from './MeritSettings';
+import { RoleManager } from './RoleManager';
 
 interface SettingsViewProps {
     rolePermissions: RolePermissions;
-    setRolePermissions: React.Dispatch<React.SetStateAction<RolePermissions>>;
+    setRolePermissions: (p: RolePermissions) => void;
     customRoles: string[];
-    setCustomRoles: React.Dispatch<React.SetStateAction<string[]>>;
+    setCustomRoles: (roles: string[]) => void;
     restrictLateralMessaging: boolean;
-    setRestrictLateralMessaging: React.Dispatch<React.SetStateAction<boolean>>;
+    setRestrictLateralMessaging: (v: boolean) => void;
     onExportBackup: () => void;
 }
 
@@ -127,95 +129,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
         }
     };
 
-    // Default system roles
-    const systemRoles: EmployeeRole[] = [
-        'EMPRESA', 'GERENTE', 'COORDINADOR', 'JEFE_COCINA', 'ADMINISTRATIVO', 'MOSTRADOR', 'COCINA', 'REPARTIDOR', 'DELIVERY'
-    ];
-
-    const userRoles: UserRole[] = ['MANAGER', 'COORDINADOR', 'ENCARGADO', 'CAJERO'];
-
-    // State for User Role Defaults (Persisted in LocalStorage)
-    const [userRoleDefaults, setUserRoleDefaults] = useState<Record<UserRole, UserPermissions>>(() => {
-        const saved = localStorage.getItem('sushiblack_user_role_defaults');
-        if (saved) return JSON.parse(saved);
-        // Initial Defaults
-        return {
-            'MANAGER': { viewHr: true, manageHr: true, createHr: true, editHr: true, deleteHr: true, viewOps: true, manageOps: true, createOps: true, editOps: true, deleteOps: true, viewFinance: true, manageFinance: true, createFinance: true, editFinance: true, deleteFinance: true, viewInventory: true, manageInventory: true, createInventory: true, editInventory: true, deleteInventory: true, superAdmin: false },
-            'COORDINADOR': { viewHr: true, manageHr: false, viewOps: true, manageOps: false, viewFinance: false, manageFinance: false, viewInventory: true, manageInventory: true, superAdmin: false },
-            'ENCARGADO': { viewHr: false, manageHr: false, viewOps: true, manageOps: false, viewFinance: false, manageFinance: false, viewInventory: true, manageInventory: true, superAdmin: false },
-            'CAJERO': { viewHr: false, manageHr: false, viewOps: false, manageOps: false, viewFinance: true, manageFinance: false, viewInventory: true, manageInventory: false, superAdmin: false },
-            'ADMIN': { viewHr: true, manageHr: true, superAdmin: true, viewOps: true, manageOps: true, viewFinance: true, manageFinance: true, viewInventory: true, manageInventory: true } // Usually unused as ADMIN is hardcoded check
-        };
-    });
-
-    const toggleUserPermission = (role: UserRole, key: keyof UserPermissions) => {
-        const newDefaults = { ...userRoleDefaults, [role]: { ...userRoleDefaults[role], [key]: !userRoleDefaults[role][key] } };
-        setUserRoleDefaults(newDefaults);
-        localStorage.setItem('sushiblack_user_role_defaults', JSON.stringify(newDefaults));
-        playSound('CLICK');
-    };
-
-    const allRoles = [...systemRoles, ...customRoles];
-
-    const permissionModules: { id: PermissionKey; label: string; icon: any }[] = [
-        { id: 'canViewInventory', label: 'Inventario', icon: Box },
-        { id: 'canViewCash', label: 'Caja / Movimientos', icon: Wallet },
-        { id: 'canViewFinancials', label: 'Finanzas (Sueldo)', icon: Save },
-        { id: 'canViewChecklist', label: 'Tareas / Checklist', icon: CheckSquare },
-        { id: 'canViewProfile', label: 'Perfil / Contrato', icon: User },
-        { id: 'canViewCalendar', label: 'Calendario', icon: Calendar },
-        { id: 'canViewForum', label: 'Foro Staff', icon: MessageCircle },
-        { id: 'canViewCommunication', label: 'Comunicación', icon: Mail },
-        { id: 'canViewSuppliers', label: 'Proveedores', icon: Truck },
-        { id: 'canViewBudgetRequests', label: 'Presupuestos', icon: DollarSign },
-    ];
-
-    const togglePermission = (role: string, permission: PermissionKey) => {
-        const currentPermissions = rolePermissions[role] || [];
-        const hasPermission = currentPermissions.includes(permission);
-
-        let newPermissions;
-        if (hasPermission) {
-            newPermissions = currentPermissions.filter(p => p !== permission);
-        } else {
-            newPermissions = [...currentPermissions, permission];
-        }
-
-        setRolePermissions({ ...rolePermissions, [role]: newPermissions });
-        playSound('CLICK');
-    };
-
-    const handleAddRole = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newRoleName.trim()) return;
-        const formattedName = newRoleName.toUpperCase().replace(/\s+/g, '_');
-
-        if (allRoles.includes(formattedName)) {
-            alert('Este rol ya existe.');
-            return;
-        }
-
-        setCustomRoles([...customRoles, formattedName]);
-        setNewRoleName('');
-        playSound('SUCCESS');
-    };
-
-    const handleDeleteRole = (role: string) => {
-        setConfirmModal({
-            isOpen: true,
-            title: '¿Eliminar Rol?',
-            message: `¿Eliminar rol personalizado "${role}"?`,
-            onConfirm: () => {
-                setCustomRoles(customRoles.filter(r => r !== role));
-                // Clean up permissions
-                const newPermissions = { ...rolePermissions };
-                delete newPermissions[role];
-                setRolePermissions(newPermissions);
-                playSound('CLICK');
-            }
-        });
-    };
-
     const sortedChangelog = [...changelogData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return (
@@ -229,6 +142,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
                     <p className="text-gray-500 dark:text-sushi-muted mt-2">Personaliza roles, permisos y funciones.</p>
                 </div>
             </div>
+
+            {/* Gamification Settings */}
+            <CollapsibleSection title="Gamificación y Méritos" icon={Trophy} defaultOpen={false}>
+                <p className="text-sm text-gray-500 dark:text-sushi-muted mb-6">
+                    Define los tipos de méritos y reconocimientos disponibles para los empleados.
+                </p>
+                <MeritSettings />
+            </CollapsibleSection>
 
             {/* Messaging Restrictions */}
             {/* Messaging Restrictions */}
@@ -257,159 +178,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
             </CollapsibleSection>
 
 
-            {/* Role Permissions Matrix */}
-            {/* Role Permissions Matrix */}
-            <CollapsibleSection title="Matriz de Permisos (Miembros)" icon={Shield} defaultOpen={true}>
-
+            {/* Role Manager (Unified Permissions & Roles) */}
+            <CollapsibleSection title="Gestión de Roles y Permisos" icon={Shield} defaultOpen={true}>
                 <p className="text-sm text-gray-500 dark:text-sushi-muted mb-6">
-                    Control total sobre qué puede ver y hacer cada empleado desde su portal personal.
+                    Define los roles del sistema y personaliza en detalle a qué módulos y acciones tiene acceso cada uno.
                 </p>
-
-                <div className="overflow-x-auto pb-4">
-                    <table className="w-full text-left border-collapse min-w-[1000px]">
-                        <thead>
-                            <tr className="bg-gray-50 dark:bg-black/20 text-xs uppercase tracking-wider text-gray-500 dark:text-sushi-muted">
-                                <th className="p-4 rounded-tl-lg sticky left-0 bg-gray-50 dark:bg-black/20 z-10 shadow-sm">Rol / Jerarquía</th>
-                                {permissionModules.map(mod => (
-                                    <th key={mod.id} className="p-4 text-center min-w-[100px]">
-                                        <div className="flex flex-col items-center gap-1">
-                                            <mod.icon className="w-4 h-4 text-gray-400" />
-                                            <span className="text-[10px] leading-tight">{mod.label}</span>
-                                        </div>
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                            {allRoles.map(role => (
-                                <tr key={role} className="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                                    <td className="p-4 font-bold text-gray-900 dark:text-white flex items-center gap-2 sticky left-0 bg-white dark:bg-sushi-dark z-10 border-r border-gray-100 dark:border-white/5">
-                                        {customRoles.includes(role) ? <Briefcase className="w-4 h-4 text-sushi-gold" /> : <Shield className="w-4 h-4 text-gray-400" />}
-                                        {role.replace(/_/g, ' ')}
-                                    </td>
-                                    {permissionModules.map(mod => {
-                                        const hasAccess = (rolePermissions[role] || []).includes(mod.id);
-                                        return (
-                                            <td key={mod.id} className="p-4 text-center">
-                                                <label className="relative inline-flex items-center cursor-pointer justify-center group">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={hasAccess}
-                                                        onChange={() => togglePermission(role, mod.id)}
-                                                        className="sr-only peer"
-                                                    />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-white/10 peer-checked:bg-sushi-gold after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white group-hover:ring-2 ring-sushi-gold/20"></div>
-                                                </label>
-                                            </td>
-                                        );
-                                    })}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </CollapsibleSection>
-
-            {/* Granular User Permissions Matrix */}
-            <CollapsibleSection title="Matriz de Permisos (Usuarios de Sistema)" icon={User} defaultOpen={false}>
-                <p className="text-sm text-gray-500 dark:text-sushi-muted mb-6">
-                    Definición granular de permisos para los roles de usuario que acceden al panel de administración.
-                </p>
-
-                <div className="overflow-x-auto pb-4">
-                    <table className="w-full text-left border-collapse min-w-[1200px]">
-                        <thead>
-                            <tr className="bg-gray-50 dark:bg-black/20 text-[10px] uppercase tracking-wider text-gray-500 dark:text-sushi-muted">
-                                <th className="p-4 rounded-tl-lg sticky left-0 bg-gray-50 dark:bg-black/20 z-10 shadow-sm w-40">Rol de Usuario</th>
-                                {/* Module Headers */}
-                                <th className="p-2 text-center border-l border-gray-200 dark:border-white/5" colSpan={5}>Recursos Humanos</th>
-                                <th className="p-2 text-center border-l border-gray-200 dark:border-white/5" colSpan={6}>Operaciones</th>
-                                <th className="p-2 text-center border-l border-gray-200 dark:border-white/5" colSpan={6}>Finanzas</th>
-                                <th className="p-2 text-center border-l border-gray-200 dark:border-white/5" colSpan={5}>Inventario</th>
-                            </tr>
-                            <tr className="bg-gray-50 dark:bg-black/20 text-[9px] uppercase tracking-wider text-gray-400 dark:text-sushi-muted/70">
-                                <th className="sticky left-0 bg-gray-50 dark:bg-black/20 z-10"></th>
-                                {/* HR */}
-                                <th className="text-center p-1">Ver</th><th className="text-center p-1">Crear</th><th className="text-center p-1">Editar</th><th className="text-center p-1">Borrar</th><th className="text-center p-1 border-r border-gray-100 dark:border-white/5">Full</th>
-                                {/* Ops */}
-                                <th className="text-center p-1">Ver</th><th className="text-center p-1">Crear</th><th className="text-center p-1">Editar</th><th className="text-center p-1">Borrar</th><th className="text-center p-1">Aprobar</th><th className="text-center p-1 border-r border-gray-100 dark:border-white/5">Full</th>
-                                {/* Fin */}
-                                <th className="text-center p-1">Ver</th><th className="text-center p-1">Crear</th><th className="text-center p-1">Editar</th><th className="text-center p-1">Borrar</th><th className="text-center p-1">Aprobar</th><th className="text-center p-1 border-r border-gray-100 dark:border-white/5">Full</th>
-                                {/* Inv */}
-                                <th className="text-center p-1">Ver</th><th className="text-center p-1">Crear</th><th className="text-center p-1">Editar</th><th className="text-center p-1">Borrar</th><th className="text-center p-1">Full</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                            {userRoles.map(role => (
-                                <tr key={role} className="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                                    <td className="p-4 font-bold text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-sushi-dark z-10 border-r border-gray-100 dark:border-white/5">
-                                        {role}
-                                    </td>
-
-                                    {/* HR */}
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.viewHr} onChange={() => toggleUserPermission(role, 'viewHr')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.createHr} onChange={() => toggleUserPermission(role, 'createHr')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.editHr} onChange={() => toggleUserPermission(role, 'editHr')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.deleteHr} onChange={() => toggleUserPermission(role, 'deleteHr')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center border-r border-gray-100 dark:border-white/5"><input type="checkbox" checked={!!userRoleDefaults[role]?.manageHr} onChange={() => toggleUserPermission(role, 'manageHr')} className="accent-blue-500" /></td>
-
-                                    {/* Ops */}
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.viewOps} onChange={() => toggleUserPermission(role, 'viewOps')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.createOps} onChange={() => toggleUserPermission(role, 'createOps')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.editOps} onChange={() => toggleUserPermission(role, 'editOps')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.deleteOps} onChange={() => toggleUserPermission(role, 'deleteOps')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.approveOps} onChange={() => toggleUserPermission(role, 'approveOps')} className="accent-purple-500" /></td>
-                                    <td className="text-center border-r border-gray-100 dark:border-white/5"><input type="checkbox" checked={!!userRoleDefaults[role]?.manageOps} onChange={() => toggleUserPermission(role, 'manageOps')} className="accent-blue-500" /></td>
-
-                                    {/* Finance */}
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.viewFinance} onChange={() => toggleUserPermission(role, 'viewFinance')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.createFinance} onChange={() => toggleUserPermission(role, 'createFinance')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.editFinance} onChange={() => toggleUserPermission(role, 'editFinance')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.deleteFinance} onChange={() => toggleUserPermission(role, 'deleteFinance')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.approveFinance} onChange={() => toggleUserPermission(role, 'approveFinance')} className="accent-purple-500" /></td>
-                                    <td className="text-center border-r border-gray-100 dark:border-white/5"><input type="checkbox" checked={!!userRoleDefaults[role]?.manageFinance} onChange={() => toggleUserPermission(role, 'manageFinance')} className="accent-blue-500" /></td>
-
-                                    {/* Inventory */}
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.viewInventory} onChange={() => toggleUserPermission(role, 'viewInventory')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.createInventory} onChange={() => toggleUserPermission(role, 'createInventory')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.editInventory} onChange={() => toggleUserPermission(role, 'editInventory')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.deleteInventory} onChange={() => toggleUserPermission(role, 'deleteInventory')} className="accent-sushi-gold" /></td>
-                                    <td className="text-center"><input type="checkbox" checked={!!userRoleDefaults[role]?.manageInventory} onChange={() => toggleUserPermission(role, 'manageInventory')} className="accent-blue-500" /></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </CollapsibleSection>
-
-            {/* Custom Role Creator */}
-            <CollapsibleSection title="Roles Personalizados" icon={Briefcase} defaultOpen={false}>
-                <div className="flex gap-4 mb-6">
-                    <form onSubmit={handleAddRole} className="flex-1 flex gap-2">
-                        <input
-                            type="text"
-                            value={newRoleName}
-                            onChange={e => setNewRoleName(e.target.value)}
-                            placeholder="Nombre del nuevo rol (Ej. Supervisor Limpieza)"
-                            className="flex-1 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 outline-none focus:border-sushi-gold dark:text-white"
-                        />
-                        <button type="submit" className="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700 transition-colors flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Crear
-                        </button>
-                    </form>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                    {customRoles.length === 0 && <p className="text-gray-400 dark:text-sushi-muted text-sm italic">No hay roles personalizados creados.</p>}
-                    {customRoles.map(role => (
-                        <div key={role} className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/10">
-                            <span className="font-bold text-gray-700 dark:text-white text-sm">{role.replace(/_/g, ' ')}</span>
-                            <button onClick={() => handleDeleteRole(role)} className="text-gray-400 hover:text-red-500">
-                                <Trash2 className="w-3 h-3" />
-                            </button>
-                        </div>
-                    ))}
-                </div>
+                <RoleManager
+                    customRoles={customRoles}
+                    setCustomRoles={setCustomRoles}
+                    rolePermissions={rolePermissions}
+                    onUpdatePermissions={async (updated) => setRolePermissions(updated)}
+                />
             </CollapsibleSection>
 
             {/* Data Security Section */}

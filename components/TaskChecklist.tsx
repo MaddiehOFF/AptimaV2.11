@@ -60,7 +60,7 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
             employeeId,
             description: newTaskText,
             status: 'PENDING',
-            assignedBy: 'Admin',
+            assignedBy: userName || 'Admin',
             date: new Date().toISOString()
         };
         setTasks([...tasks, newTask]);
@@ -213,6 +213,9 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
                                     <div>
                                         <span className={`text-sm block ${isCompleted || isSkipped ? 'text-gray-500 dark:text-gray-400 line-through' : 'text-gray-900 dark:text-white font-medium'}`}>
                                             {task.description}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 dark:text-gray-500 block uppercase tracking-wider font-bold mt-0.5">
+                                            Asignado por: {task.assignedBy || 'Admin'}
                                         </span>
                                         {task.completedAt && (
                                             <div className="flex gap-2 mt-0.5">
