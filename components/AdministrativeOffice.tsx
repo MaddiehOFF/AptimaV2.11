@@ -11,6 +11,7 @@ import { CatWidget } from './widgets/CatWidget';
 import { generateDocumentStructure } from '../services/geminiService';
 import { UserProfileModal } from './UserProfileModal';
 import { generateUUID } from '../utils/uuid';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 // MODULE_NAMES_ES Constant moved outside component
 const MODULE_NAMES_ES: Record<string, string> = {
@@ -47,6 +48,7 @@ interface AdministrativeOfficeProps {
     // Calendar Props
     calendarEvents?: CalendarEvent[];
     onAddCalendarEvent?: (event: CalendarEvent) => void;
+    onDeleteEvent?: (id: string) => void;
     records?: OvertimeRecord[];
     absences?: AbsenceRecord[];
     holidays?: string[];
@@ -78,6 +80,7 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     onComposeMessage,
     calendarEvents = [],
     onAddCalendarEvent,
+    onDeleteEvent,
     records = [],
     absences = [],
     holidays = [],
@@ -103,6 +106,22 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     const [activeDocId, setActiveDocId] = useState<string | null>(null);
     const [selectedPeer, setSelectedPeer] = useState<User | null>(null);
     const [trashView, setTrashView] = useState(false);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onConfirm: () => { },
+    });
 
     // Editor State
     const [editorTitle, setEditorTitle] = useState('');
@@ -217,8 +236,11 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     }, [viewMode, activeDocId, trashView, docFilter, myDocs.length]);
 
     // Safety Check Helper
-    const checkUnsavedChanges = (): boolean => {
-        if (!activeDocId || !currentDoc) return true;
+    const executeWithUnsavedCheck = (action: () => void) => {
+        if (!activeDocId || !currentDoc) {
+            action();
+            return;
+        }
 
         // Normalize content for comparison (handle potential nulls/undefined)
         const currentTitle = currentDoc.title || '';
@@ -231,58 +253,68 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
             JSON.stringify(editorAttachments) !== JSON.stringify(currentAttachments);
 
         if (hasChanges) {
-            return window.confirm('Tienes cambios sin guardar. ¿Estás seguro de que quieres salir? Se perderán los cambios no guardados.');
+            setConfirmModal({
+                isOpen: true,
+                title: '¿Cambios sin guardar?',
+                message: 'Tienes cambios sin guardar. ¿Quieres salir y perder los cambios?',
+                type: 'warning',
+                confirmText: 'SÍ, SALIR',
+                onConfirm: action
+            });
+        } else {
+            action();
         }
-        return true;
     };
 
     const handleNewDoc = () => {
-        if (!checkUnsavedChanges()) return;
-
-        const draftDoc: OfficeDocument = {
-            id: 'draft-' + Date.now(),
-            title: 'Nuevo Documento',
-            type: 'DOC',
-            content: '',
-            authors: [currentUser.id],
-            status: 'DRAFT',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            sharedWith: [],
-            readBy: [currentUser.id],
-            attachments: []
-        };
-        setDocuments([draftDoc, ...documents]);
-        setActiveDocId(draftDoc.id);
-        setEditorTitle('Nuevo Documento');
-        setEditorContent('');
-        setEditorAttachments([]);
-        setViewMode('DOCS');
-        setDocFilter('MINE');
-        setTrashView(false);
+        executeWithUnsavedCheck(() => {
+            const draftDoc: OfficeDocument = {
+                id: 'draft-' + Date.now(),
+                title: 'Nuevo Documento',
+                type: 'DOC',
+                content: '',
+                authors: [currentUser.id],
+                status: 'DRAFT',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                sharedWith: [],
+                readBy: [currentUser.id],
+                attachments: []
+            };
+            setDocuments([draftDoc, ...documents]);
+            setActiveDocId(draftDoc.id);
+            setEditorTitle('Nuevo Documento');
+            setEditorContent('');
+            setEditorAttachments([]);
+            setViewMode('DOCS');
+            setDocFilter('MINE');
+            setTrashView(false);
+        });
     };
 
     const handleSelectDoc = async (doc: OfficeDocument) => {
-        if (doc.id !== activeDocId && !checkUnsavedChanges()) return;
+        if (doc.id === activeDocId) return; // Prevent re-select same doc
 
-        if (doc.status === 'TRASHED' && !trashView) return;
+        executeWithUnsavedCheck(async () => {
+            if (doc.status === 'TRASHED' && !trashView) return;
 
-        setActiveDocId(doc.id);
-        setEditorTitle(doc.title);
-        setEditorContent(doc.content);
-        setEditorAttachments(doc.attachments || []);
-        setShareSelectedUsers(doc.sharedWith || []);
+            setActiveDocId(doc.id);
+            setEditorTitle(doc.title);
+            setEditorContent(doc.content);
+            setEditorAttachments(doc.attachments || []);
+            setShareSelectedUsers(doc.sharedWith || []);
 
-        if (viewMode !== 'DOCS') setViewMode('DOCS');
+            if (viewMode !== 'DOCS') setViewMode('DOCS');
 
-        if (doc.sharedWith?.includes(currentUser.id) && !doc.authors.includes(currentUser.id) && !doc.readBy?.includes(currentUser.id)) {
-            const newReadBy = [...(doc.readBy || []), currentUser.id];
-            setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, readBy: newReadBy } : d));
-            if (!doc.id.startsWith('draft-')) {
-                const updatedDoc = { ...doc, readBy: newReadBy };
-                await supabase.from('office_documents').update({ data: updatedDoc }).eq('id', doc.id);
+            if (doc.sharedWith?.includes(currentUser.id) && !doc.authors.includes(currentUser.id) && !doc.readBy?.includes(currentUser.id)) {
+                const newReadBy = [...(doc.readBy || []), currentUser.id];
+                setDocuments(prev => prev.map(d => d.id === doc.id ? { ...d, readBy: newReadBy } : d));
+                if (!doc.id.startsWith('draft-')) {
+                    const updatedDoc = { ...doc, readBy: newReadBy };
+                    await supabase.from('office_documents').update({ data: updatedDoc }).eq('id', doc.id);
+                }
             }
-        }
+        });
     };
 
     const handleSave = async () => {
@@ -339,22 +371,30 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
             alert('No puedes eliminar documentos compartidos por otros.');
             return;
         }
-        if (!window.confirm('¿Mover a papelera?')) return;
-        try {
-            if (doc.id.startsWith('draft-')) {
-                setDocuments(prev => prev.filter(d => d.id !== doc.id));
-                if (activeDocId === doc.id) setActiveDocId(null);
-                return;
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Mover a papelera?',
+            message: 'El documento se moverá a la papelera.',
+            type: 'warning',
+            confirmText: 'MOVER',
+            onConfirm: async () => {
+                try {
+                    if (doc.id.startsWith('draft-')) {
+                        setDocuments(prev => prev.filter(d => d.id !== doc.id));
+                        if (activeDocId === doc.id) setActiveDocId(null);
+                        return;
+                    }
+                    const updatedDoc = { ...doc, status: 'TRASHED', updatedAt: new Date().toISOString() };
+                    await supabase.from('office_documents').update({ data: updatedDoc }).eq('id', doc.id);
+                    setDocuments(prev => prev.map(d => d.id === doc.id ? updatedDoc as OfficeDocument : d));
+                    if (activeDocId === doc.id) setActiveDocId(null);
+                    playSound('CLICK');
+                } catch (error) {
+                    console.error(error);
+                    alert('Error al mover a papelera');
+                }
             }
-            const updatedDoc = { ...doc, status: 'TRASHED', updatedAt: new Date().toISOString() };
-            await supabase.from('office_documents').update({ data: updatedDoc }).eq('id', doc.id);
-            setDocuments(prev => prev.map(d => d.id === doc.id ? updatedDoc as OfficeDocument : d));
-            if (activeDocId === doc.id) setActiveDocId(null);
-            playSound('CLICK');
-        } catch (error) {
-            console.error(error);
-            alert('Error al mover a papelera');
-        }
+        });
     };
 
     const handleRestoreDoc = async (doc: OfficeDocument, e: React.MouseEvent) => {
@@ -371,19 +411,27 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
     };
 
     const handleEmptyTrash = async () => {
-        if (!window.confirm('¿ELIMINAR DEFINITIVAMENTE todos los documentos de la papelera?')) return;
-        const idsToDelete = trashedDocs.map(d => d.id);
-        if (idsToDelete.length === 0) return;
-        try {
-            const { error } = await supabase.from('office_documents').delete().in('id', idsToDelete);
-            if (error) throw error;
-            setDocuments(prev => prev.filter(d => !idsToDelete.includes(d.id)));
-            if (activeDocId && idsToDelete.includes(activeDocId)) setActiveDocId(null);
-            playSound('CLICK');
-        } catch (error) {
-            console.error(error);
-            alert('Error al vaciar papelera');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿VACIAR PAPELERA?',
+            message: '¿ELIMINAR DEFINITIVAMENTE todos los documentos de la papelera? Esta acción no se puede deshacer.',
+            type: 'danger',
+            confirmText: 'SÍ, ELIMINAR TODO',
+            onConfirm: async () => {
+                const idsToDelete = trashedDocs.map(d => d.id);
+                if (idsToDelete.length === 0) return;
+                try {
+                    const { error } = await supabase.from('office_documents').delete().in('id', idsToDelete);
+                    if (error) throw error;
+                    setDocuments(prev => prev.filter(d => !idsToDelete.includes(d.id)));
+                    if (activeDocId && idsToDelete.includes(activeDocId)) setActiveDocId(null);
+                    playSound('CLICK');
+                } catch (error) {
+                    console.error(error);
+                    alert('Error al vaciar papelera');
+                }
+            }
+        });
     };
 
     const handleShare = async () => {
@@ -736,8 +784,8 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
                         Oficina
                     </h2>
                     <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-lg">
-                        <button onClick={() => { if (checkUnsavedChanges()) setViewMode('DOCS'); }} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'DOCS' ? 'bg-white dark:bg-white/10 shadow-sm text-sushi-gold' : 'text-gray-500'}`}>Archivos</button>
-                        <button onClick={() => { if (checkUnsavedChanges()) setViewMode('TEAM'); }} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'TEAM' ? 'bg-white dark:bg-white/10 shadow-sm text-sushi-gold' : 'text-gray-500'}`}>Equipo</button>
+                        <button onClick={() => { executeWithUnsavedCheck(() => setViewMode('DOCS')); }} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'DOCS' ? 'bg-white dark:bg-white/10 shadow-sm text-sushi-gold' : 'text-gray-500'}`}>Archivos</button>
+                        <button onClick={() => { executeWithUnsavedCheck(() => setViewMode('TEAM')); }} className={`flex-1 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'TEAM' ? 'bg-white dark:bg-white/10 shadow-sm text-sushi-gold' : 'text-gray-500'}`}>Equipo</button>
                     </div>
                 </div>
 
@@ -823,7 +871,7 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
 
                 <div className="p-4 border-t border-gray-200 dark:border-white/5">
                     <button
-                        onClick={() => { if (checkUnsavedChanges()) setViewMode('CENTRAL'); }}
+                        onClick={() => { executeWithUnsavedCheck(() => setViewMode('CENTRAL')); }}
                         className="w-full flex items-center justify-center gap-2 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-colors shadow-lg"
                     >
                         <LayoutDashboard className="w-4 h-4" />
@@ -880,6 +928,7 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
                                             const newEvent = { ...evt, userId: currentUser.id, visibility: evt.visibility || 'PRIVATE' };
                                             onAddCalendarEvent && onAddCalendarEvent(newEvent);
                                         }}
+                                        onDeleteEvent={onDeleteEvent}
                                         records={showPublicEvents ? records : records.filter(r => r.employeeId === employees.find(emp => emp.name === currentUser.name)?.id)}
                                         absences={showPublicEvents ? absences : absences.filter(a => a.employeeId === employees.find(emp => emp.name === currentUser.name)?.id)}
                                         holidays={showPublicEvents ? holidays : []}
@@ -1245,6 +1294,17 @@ export const AdministrativeOffice: React.FC<AdministrativeOfficeProps> = ({
                     setCatHidden(true);
                     localStorage.setItem('sushiblack_office_cat_hidden', JSON.stringify(true));
                 }}
+            />
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
             />
         </div>
     );

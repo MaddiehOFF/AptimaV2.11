@@ -103,6 +103,40 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ products, se
         }
     };
 
+    // --- IMPORT FROM SHIFT HISTORY ---
+    const [showHistoryImportModal, setShowHistoryImportModal] = useState(false);
+
+    const handleImportFromShift = (shift: CashShift) => {
+        if (!shift.salesDataSnapshot || shift.salesDataSnapshot.length === 0) {
+            alert('Este cierre no tiene datos de ventas adjuntos.');
+            return;
+        }
+
+        const newQuantities = { ...quantities };
+        const skippedList: { name: string; qty: number }[] = [];
+        let addedCount = 0;
+
+        shift.salesDataSnapshot.forEach((item: any) => {
+            const product = products.find(p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+            if (product) {
+                newQuantities[product.id] = (newQuantities[product.id] || 0) + item.qty;
+                addedCount += item.qty;
+            } else {
+                skippedList.push(item);
+            }
+        });
+
+        setQuantities(newQuantities);
+        setImportLog(skippedList);
+        setShowHistoryImportModal(false);
+
+        if (skippedList.length > 0) {
+            setShowImportLog(true);
+        } else {
+            alert(`Importación exitosa desde cierre del ${new Date(shift.date).toLocaleDateString()}. Se cargaron ${addedCount} items.`);
+        }
+    };
+
     const totals = useMemo(() => {
         let labor = 0;
         let material = 0;
@@ -352,9 +386,16 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ products, se
                                 accept=".xlsx, .xls"
                                 onChange={handleImportSales}
                                 disabled={isImporting}
-                                className="hidden"
                             />
                         </label>
+
+                        <button
+                            onClick={() => setShowHistoryImportModal(true)}
+                            className="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700 transition-colors flex items-center gap-2 shadow-lg text-sm"
+                        >
+                            <History className="w-4 h-4" />
+                            Importar de Cierre
+                        </button>
 
                         <div className="flex gap-2">
                             <button
@@ -777,6 +818,60 @@ export const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ products, se
                     </div>
                 )
             }
+
+            {/* History Import Modal */}
+            {showHistoryImportModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-sushi-dark w-full max-w-lg rounded-2xl p-6 border border-gray-200 dark:border-white/10 shadow-2xl animate-fade-in max-h-[80vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-white/10 pb-4">
+                            <h3 className="text-xl font-serif text-gray-900 dark:text-white flex items-center gap-2">
+                                <History className="w-6 h-6 text-purple-600" />
+                                Importar desde Cierre
+                            </h3>
+                            <button onClick={() => setShowHistoryImportModal(false)} className="text-gray-400 hover:text-white"><X className="w-6 h-6" /></button>
+                        </div>
+
+                        <p className="text-sm text-gray-500 dark:text-sushi-muted mb-4">
+                            Selecciona un cierre de caja pasado para cargar sus ventas en la calculadora.
+                        </p>
+
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+                            {(!cashShifts || cashShifts.filter(s => s.salesDataSnapshot && s.salesDataSnapshot.length > 0).length === 0) ? (
+                                <p className="text-center text-gray-400 italic py-8">No hay cierres con datos de ventas guardados.</p>
+                            ) : (
+                                (cashShifts || [])
+                                    .filter(s => s.salesDataSnapshot && s.salesDataSnapshot.length > 0)
+                                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) // Newest first
+                                    .map(shift => (
+                                        <button
+                                            key={shift.id}
+                                            onClick={() => handleImportFromShift(shift)}
+                                            className="w-full text-left bg-gray-50 dark:bg-black/20 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-200 dark:border-white/5 rounded-xl p-4 transition-all group"
+                                        >
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="font-bold text-gray-900 dark:text-white">
+                                                    {new Date(shift.date).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                </span>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${shift.status === 'OPEN' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {shift.status === 'OPEN' ? 'Abierto' : 'Cerrado'}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-gray-500 dark:text-sushi-muted">
+                                                <span className="flex items-center gap-1">
+                                                    <Clock className="w-3 h-3" />
+                                                    {new Date(shift.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                <span>
+                                                    {shift.salesDataSnapshot?.length} items
+                                                </span>
+                                            </div>
+                                        </button>
+                                    ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

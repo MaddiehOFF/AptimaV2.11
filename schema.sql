@@ -389,3 +389,14 @@ ALTER TABLE changelog_entries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Changelog" ON changelog_entries;
 CREATE POLICY "Public Access Changelog" ON changelog_entries FOR ALL USING (true) WITH CHECK (true);
 ALTER PUBLICATION supabase_realtime ADD TABLE changelog_entries;
+
+-- 4. WALLET CHAT MESSAGES (AI MEMORY)
+CREATE TABLE IF NOT EXISTS wallet_chat_messages (
+  id text primary key,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+ALTER TABLE wallet_chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Wallet Chat" ON wallet_chat_messages;
+CREATE POLICY "Public Access Wallet Chat" ON wallet_chat_messages FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE wallet_chat_messages;

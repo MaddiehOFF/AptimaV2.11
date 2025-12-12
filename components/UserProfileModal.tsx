@@ -47,7 +47,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, onClos
             if (data && data.length > 0) {
                 // Set Last Login
                 const last = data[0];
-                setLastLogin(last.created_at || last.data?.startTime || new Date().toISOString());
+                setLastLogin(last.created_at || last.data?.timestamp || new Date().toISOString());
 
                 // Calculate Stats (limit to last 7 days for chart/stats if needed, or use all?)
                 // Previous logic used a filter in query .gte('updated_at'). 
@@ -62,7 +62,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ user, onClos
                 // Let's stick to the previous filter logic BUT sort by date to get the true last one in that range.
                 // If no activity in 7 days, "Hace más de 7 días".
 
-                const recentLogs = data.filter((row: any) => new Date(row.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+                const recentLogs = data.filter((row: any) => {
+                    const dateStr = row.created_at || row.data?.timestamp;
+                    return dateStr && new Date(dateStr) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                });
 
                 const modStats: Record<string, number> = {};
                 let total = 0;

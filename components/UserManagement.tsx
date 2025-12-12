@@ -4,6 +4,7 @@ import { User, UserPermissions, UserRole } from '../types';
 import { UserCog, Trash2, Shield, User as UserIcon, Mail, Clock, Check, Lock, Grid, Users, Wallet, Archive, Box, Edit3, X } from 'lucide-react';
 import { playSound } from '../utils/soundUtils';
 import { exportUserCredentialsPDF } from '../utils/exportUtils';
+import { ConfirmationModal } from './common/ConfirmationModal';
 import { supabase } from '../supabaseClient';
 
 interface UserManagementProps {
@@ -33,6 +34,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
   const [tags, setTags] = useState<string[]>([]);
   const addTag = (tag: string) => setTags(prev => [...prev, tag]);
   const removeTag = (tag: string) => setTags(prev => prev.filter(t => t !== tag));
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+  });
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -191,22 +204,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
       alert("No puedes eliminar tu propio usuario.");
       return;
     }
-    if (window.confirm("¿Eliminar usuario del sistema?")) {
-      try {
-        const { error } = await supabase
-          .from('app_users')
-          .delete()
-          .eq('id', id);
+    setConfirmModal({
+      isOpen: true,
+      title: '¿Eliminar Usuario?',
+      message: '¿Eliminar usuario del sistema? Esta acción no se puede deshacer.',
+      onConfirm: async () => {
+        try {
+          const { error } = await supabase
+            .from('app_users')
+            .delete()
+            .eq('id', id);
 
-        if (error) throw error;
+          if (error) throw error;
 
-        setUsers(users.filter(u => u.id !== id));
-        playSound('CLICK');
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        alert('Error al eliminar usuario.');
+          setUsers(users.filter(u => u.id !== id));
+          playSound('CLICK');
+        } catch (error) {
+          console.error('Error deleting user:', error);
+          alert('Error al eliminar usuario.');
+        }
       }
-    }
+    });
   };
 
   const togglePermission = (key: keyof UserPermissions) => {
@@ -469,6 +487,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
           </div>
         </form>
       </div>
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type="danger"
+        confirmText="ELIMINAR"
+      />
     </div >
   );
 };

@@ -4,6 +4,7 @@ import { ShoppingList, ShoppingListItem, Supplier, SupplierProduct } from '../ty
 import { Plus, Trash2, Printer, Check, Search, AlertCircle, ShoppingCart } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface ShoppingListGeneratorProps {
     lists: ShoppingList[];
@@ -16,6 +17,18 @@ interface ShoppingListGeneratorProps {
 export const ShoppingListGenerator: React.FC<ShoppingListGeneratorProps> = ({ lists, setLists, suppliers, products, userName }) => {
     const [view, setView] = useState<'LIST' | 'CREATE' | 'DETAILS'>('LIST');
     const [selectedList, setSelectedList] = useState<ShoppingList | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     // Create State
     const [newListTitle, setNewListTitle] = useState('');
@@ -191,9 +204,14 @@ export const ShoppingListGenerator: React.FC<ShoppingListGeneratorProps> = ({ li
 
     const handleDeleteList = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('¿Borrar lista?')) {
-            setLists(lists.filter(l => l.id !== id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Borrar lista?',
+            message: '¿Estás seguro de que deseas eliminar esta lista de compras?',
+            onConfirm: () => {
+                setLists(lists.filter(l => l.id !== id));
+            }
+        });
     }
 
     return (
@@ -418,6 +436,15 @@ export const ShoppingListGenerator: React.FC<ShoppingListGeneratorProps> = ({ li
                     </div>
                 </div>
             )}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="ELIMINAR"
+            />
         </div>
     );
 };

@@ -11,6 +11,8 @@ import { calculateAccruedSalary, getLedgerAccrual, parseSalaryToNumber } from '.
 // This tool call is ONLY for Imports. I will do logic later.
 
 import { supabase } from '../supabaseClient';
+import { SecurityConfirmationModal } from './SecurityConfirmationModal';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface PayrollManagementProps {
     employees: Employee[];
@@ -25,6 +27,7 @@ interface PayrollManagementProps {
     sanctions?: SanctionRecord[]; // Add Sanctions prop
     payrollMovements?: PayrollMovement[];
     setPayrollMovements?: React.Dispatch<React.SetStateAction<PayrollMovement[]>>;
+    setRecords?: React.Dispatch<React.SetStateAction<OvertimeRecord[]>>;
 }
 
 const PayrollTutorial = ({ onClose }: { onClose: () => void }) => (
@@ -71,7 +74,7 @@ const PayrollTutorial = ({ onClose }: { onClose: () => void }) => (
     </div>
 );
 
-export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees, setEmployees, transactions = [], setTransactions, currentUser, records = [], calendarEvents = [], absences = [], products = [], sanctions = [], payrollMovements = [], setPayrollMovements }) => {
+export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees, setEmployees, transactions = [], setTransactions, currentUser, records = [], calendarEvents = [], absences = [], products = [], sanctions = [], payrollMovements = [], setPayrollMovements, setRecords }) => {
     const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -93,8 +96,31 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
     const [detailModalOpen, setDetailModalOpen] = useState(false);
     const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
 
-    // Tutorial State
+    // Security Modal State
+    const [securityModalOpen, setSecurityModalOpen] = useState(false);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onConfirm: () => { },
+    });
+
+    // Filter Logical State
     const [showTutorial, setShowTutorial] = useState(false);
+
+    // History Note Detail State
+    const [selectedNote, setSelectedNote] = useState<{ text: string; date: string } | null>(null);
+    const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
 
     // Filter out 'DIARIO' employees as they are paid daily
     const activeEmployees = employees.filter(e => e.active && e.paymentModality !== 'DIARIO');
@@ -226,7 +252,7 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
         // Actually, for internal consumption usually it's Cost, but user said "descontarselo", implies paying for it.
         // Let's use 'price' or 'laborCost + materialCost' if price not avail? 
         // The 'Product' interface has laborCost, materialCost, royalties, profit.
-        // Let's approximate Price = labor + material + royalties + profit (if profit is per unit).
+        // Let's approximate Price = laborCost + materialCost + royalties + profit (if profit is per unit).
         // Or simpler: let's assume 'products' passed has a 'price' or calculate it.
         // Re-checking Product interface in types.ts -> it has costs and profit.
         // Price = laborCost + materialCost + royalties + profit.
@@ -308,6 +334,31 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                 const totalDebt = currentBalance + accrual.accruedAmount;
                 newBalance = totalDebt - effectivePayment - discountAmount;
                 newLastPaymentDate = new Date().toISOString();
+
+                // AUTOMATICALLY MARK RECORDS AS PAID
+                if (setRecords) {
+                    const cutoffDate = new Date().toISOString();
+                    // Create list of updated records
+                    const updatedRecords = records.map(r => {
+                        if (r.employeeId === selectedEmployee.id && !r.paid && r.date <= cutoffDate) {
+                            return { ...r, paid: true };
+                        }
+                        return r;
+                    });
+
+                    // Filter only the changed ones for DB update
+                    const recordsToUpdate = updatedRecords.filter(r => {
+                        const original = records.find(or => or.id === r.id);
+                        return original && !original.paid && r.paid;
+                    });
+
+                    // Batch update DB
+                    recordsToUpdate.forEach(r => {
+                        supabase.from('overtime_records').update({ data: r }).eq('id', r.id).then();
+                    });
+
+                    setRecords(updatedRecords);
+                }
             } else {
                 newBalance = currentBalance - effectivePayment - discountAmount;
             }
@@ -357,6 +408,7 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
 
         playSound('SUCCESS');
         setPaymentModalOpen(false);
+        setSecurityModalOpen(false); // Close security modal
     };
 
     const handleGenerateReceipt = (emp: Employee, startDate?: string, endDate?: string) => {
@@ -475,7 +527,9 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
         // 1. Calculate final state before reset
         // Use Ledger for final numbers
         const ledgerGross = getLedgerAccrual(employee, payrollMovements || [], new Date(currentYear, currentMonth, 1));
-        const dynamicDetails = calculateAccruedSalary(employee, records, calendarEvents, absences, sanctions);
+        // Use End of Month as Target Date to include ALL records (even if "future" relative to today)
+        const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+        const dynamicDetails = calculateAccruedSalary(employee, records, calendarEvents, absences, sanctions, endOfMonth);
         const finalAccrued = ledgerGross - dynamicDetails.sanctionDeduction;
         const currentBalance = finalAccrued + (employee.balance || 0);
 
@@ -534,6 +588,31 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                 alert("Error al guardar el reinicio de ciclo en la base de datos.");
                 return;
             }
+        }
+
+
+
+        // 5. Mark Records as PAID directly
+        if (setRecords) {
+            const updatedRecords = records.map(r => {
+                if (r.employeeId === empId && !r.paid && r.date < newStartDate) {
+                    return { ...r, paid: true };
+                }
+                return r;
+            });
+
+            // Filter only the changed ones for DB update
+            const recordsToUpdate = updatedRecords.filter(r => {
+                const original = records.find(or => or.id === r.id);
+                return original && !original.paid && r.paid;
+            });
+
+            // Batch update DB
+            recordsToUpdate.forEach(r => {
+                supabase.from('overtime_records').update({ data: r }).eq('id', r.id).then();
+            });
+
+            setRecords(updatedRecords);
         }
 
         setEmployees(prev => prev.map(e => e.id === empId ? {
@@ -1052,20 +1131,24 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                 {modalMode === 'PAYMENT' && (
                                     <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-500/10 rounded-lg border border-blue-100 dark:border-blue-500/20">
                                         <input
+                                            id="resetCycleCheck"
                                             type="checkbox"
                                             checked={resetCycle}
-
                                             onChange={e => {
                                                 if (e.target.checked) {
-                                                    if (window.confirm("ATENCIÓN: ¿Estás seguro de que quieres REINICIAR el ciclo de pago?\n\nEsto pondrá el 'Devengado' a 0 y marcará el inicio de un nuevo periodo desde hoy.\n\nSolo usa esto si estás pagando la totalidad del periodo.")) {
-                                                        setResetCycle(true);
-                                                    }
+                                                    setConfirmModal({
+                                                        isOpen: true,
+                                                        title: '¿REINICIAR CICLO DE PAGO?',
+                                                        message: "Esto pondrá el 'Devengado' a 0 y marcará el inicio de un nuevo periodo desde hoy. Solo usa esto si estás pagando la totalidad del periodo.",
+                                                        type: 'warning',
+                                                        confirmText: 'SÍ, REINICIAR',
+                                                        onConfirm: () => setResetCycle(true)
+                                                    });
                                                 } else {
                                                     setResetCycle(false);
                                                 }
                                             }}
                                             className="mt-1"
-                                            id="resetCycleCheck"
                                         />
                                         <label htmlFor="resetCycleCheck" className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
                                             <span className="font-bold block">Reiniciar Ciclo / Días Trabajados</span>
@@ -1113,7 +1196,7 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                         Cancelar
                                     </button>
                                     <button
-                                        onClick={handleConfirmPayment}
+                                        onClick={() => setSecurityModalOpen(true)}
                                         disabled={modalMode === 'PAYMENT' && (paymentAmount <= 0 && totalProductDiscount <= 0)} // Disable if trying to pay 0
                                         className={`flex-1 px-4 py-3 bg-sushi-gold text-sushi-black font-bold rounded-xl hover:shadow-lg hover:shadow-sushi-gold/20 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${modalMode === 'DISCOUNT' ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/20' : 'bg-sushi-gold hover:bg-sushi-goldhover text-sushi-black shadow-sushi-gold/20'}`}
                                     >
@@ -1128,96 +1211,139 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
 
             {/* Detailed Employee Modal */}
             {
-                detailModalOpen && detailEmployee && (
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                        <div className="bg-white dark:bg-sushi-dark w-full max-w-2xl rounded-2xl p-6 border border-gray-200 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-16 h-16 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
-                                        {detailEmployee.photoUrl ? <img src={detailEmployee.photoUrl} className="w-full h-full object-cover" /> : null}
-                                    </div>
-                                    <div>
-                                        <h3 className="text-2xl font-serif text-gray-900 dark:text-white">{detailEmployee.name}</h3>
-                                        <p className="text-sushi-gold font-bold text-sm uppercase">{detailEmployee.position}</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => setDetailModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full">
-                                    <span className="text-2xl">&times;</span>
-                                </button>
-                            </div>
+                detailModalOpen && detailEmployee && (() => {
+                    const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+                    const dynamicStats = calculateAccruedSalary(detailEmployee, records, calendarEvents, absences, sanctions, endOfMonth);
+                    const ledgerGross = getLedgerAccrual(detailEmployee, payrollMovements || [], new Date(currentYear, currentMonth, 1));
 
-                            <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-                                {/* Stats Grid */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 text-center flex flex-col justify-between">
+                    // Merged List Logic
+                    const ledgerMoves = (payrollMovements || []).filter(m =>
+                        m.employee_id === detailEmployee.id &&
+                        // m.status !== 'ANULADO' && // Allow ANULADO (Voided) records to show
+                        m.type !== 'REINICIO' &&
+                        (!detailEmployee.payrollStartDate || m.date >= detailEmployee.payrollStartDate)
+                    );
+
+                    const pendingDynamic = dynamicStats.breakdown.filter(d => {
+                        const dDate = d.date.split('T')[0];
+                        // Map dynamic type to ledger type for comparison
+                        let targetType = d.type as string;
+                        if (d.type === 'WORKED') targetType = 'ASISTENCIA';
+                        if (d.type === 'HOLIDAY') targetType = 'ASISTENCIA';
+                        if (d.type === 'SANCTION') targetType = 'DESCUENTO';
+
+                        // Check if ALREADY in ledger with the MAPPED type
+                        return !ledgerMoves.some(l => l.date.split('T')[0] === dDate && l.type === targetType);
+                    });
+
+                    const displayedMovements = [
+                        ...ledgerMoves,
+                        ...pendingDynamic.map(d => {
+                            let displayType = d.type as string;
+                            if (d.type === 'WORKED' || d.type === 'HOLIDAY') displayType = 'ASISTENCIA';
+                            if (d.type === 'SANCTION') displayType = 'DESCUENTO';
+
+                            return {
+                                id: `dyn-${d.date}-${d.type}`,
+                                date: d.date,
+                                type: displayType,
+                                description: d.description, // e.g. "Jornada trabajada"
+                                amount: d.amount,
+                                status: 'PENDIENTE',
+                                employee_id: detailEmployee.id,
+                                created_at: new Date().toISOString(),
+                                created_by: 'SISTEMA',
+                                meta: d.meta
+                            } as any;
+                        })
+                    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                    const totalCalculated = dynamicStats.accruedAmount + (detailEmployee.balance || 0);
+
+                    return (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                            <div className="bg-white dark:bg-sushi-dark w-full max-w-2xl rounded-2xl p-6 border border-gray-200 dark:border-white/10 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                                {/* Header */}
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-16 h-16 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
+                                            {detailEmployee.photoUrl ? <img src={detailEmployee.photoUrl} className="w-full h-full object-cover" /> : null}
+                                        </div>
                                         <div>
-                                            <p className="text-xs uppercase text-gray-500 mb-1">Cierre Ciclo</p>
-                                            <p className="font-bold text-gray-900 dark:text-white mb-2">
-                                                {detailEmployee.payrollStartDate ? new Date(detailEmployee.payrollStartDate).toLocaleDateString() : 'Inicio'}
+                                            <h3 className="text-2xl font-serif text-gray-900 dark:text-white">{detailEmployee.name}</h3>
+                                            <p className="text-sushi-gold font-bold text-sm uppercase">{detailEmployee.position}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setDetailModalOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full">
+                                        <span className="text-2xl">&times;</span>
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto pr-2 space-y-6">
+                                    {/* Stats Grid */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 text-center flex flex-col justify-between">
+                                            <div>
+                                                <p className="text-xs uppercase text-gray-500 mb-1">Cierre Ciclo</p>
+                                                <p className="font-bold text-gray-900 dark:text-white mb-2">
+                                                    {detailEmployee.payrollStartDate ? new Date(detailEmployee.payrollStartDate).toLocaleDateString() : 'Inicio'}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    setNewCycleStartDate(new Date().toISOString().split('T')[0]);
+                                                    setShowConcretarModal(true);
+                                                }}
+                                                className="text-xs bg-sushi-gold text-sushi-black px-2 py-1.5 rounded-lg font-bold hover:bg-sushi-gold/90 transition-colors w-full"
+                                            >
+                                                Concretar Nómina
+                                            </button>
+                                        </div>
+                                        <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5">
+                                            <p className="text-xs uppercase text-gray-500 mb-1">Sueldo Base</p>
+                                            <p className="font-bold text-gray-900 dark:text-white">{formatMoney(detailEmployee.monthlySalary)}</p>
+                                        </div>
+                                        <div className="p-4 bg-sushi-gold/10 rounded-xl border border-sushi-gold/20">
+                                            <p className="text-xs uppercase text-sushi-gold/80 mb-1">Devengado (Proy.)</p>
+                                            <p className="font-bold text-sushi-gold">
+                                                {formatMoney(dynamicStats.accruedAmount)}
                                             </p>
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                setNewCycleStartDate(new Date().toISOString().split('T')[0]);
-                                                setShowConcretarModal(true);
-                                            }}
-                                            className="text-xs bg-sushi-gold text-sushi-black px-2 py-1.5 rounded-lg font-bold hover:bg-sushi-gold/90 transition-colors w-full"
-                                        >
-                                            Concretar Nómina
-                                        </button>
+                                        <div className="p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                                            <p className="text-xs uppercase text-blue-500 mb-1">Saldo Total</p>
+                                            <p className="font-bold text-blue-600 dark:text-blue-400">
+                                                {formatMoney(totalCalculated)}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="p-4 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5">
-                                        <p className="text-xs uppercase text-gray-500 mb-1">Sueldo Base</p>
-                                        <p className="font-bold text-gray-900 dark:text-white">{formatMoney(detailEmployee.monthlySalary)}</p>
-                                    </div>
-                                    <div className="p-4 bg-sushi-gold/10 rounded-xl border border-sushi-gold/20">
-                                        <p className="text-xs uppercase text-sushi-gold/80 mb-1">Devengado</p>
-                                        <p className="font-bold text-sushi-gold">
-                                            {formatMoney(getLedgerAccrual(detailEmployee, payrollMovements || [], new Date(currentYear, currentMonth, 1)))}
-                                        </p>
-                                    </div>
-                                    <div className="p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                                        <p className="text-xs uppercase text-blue-500 mb-1">Saldo Total</p>
-                                        <p className="font-bold text-blue-600 dark:text-blue-400">
-                                            {formatMoney(Math.max(0, (getLedgerAccrual(detailEmployee, payrollMovements || [], new Date(currentYear, currentMonth, 1)) - calculateAccruedSalary(detailEmployee, records, calendarEvents, absences, sanctions).sanctionDeduction) + (detailEmployee.balance || 0)))}
-                                        </p>
-                                    </div>
-                                </div>
 
-                                {/* 38.5 Detailed Ledger of Pending Movements (Attendance & Sanctions) */}
-                                <div>
-                                    <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-gray-400" />
-                                        Detalle de Movimientos Pendientes
-                                    </h4>
-                                    <div className="bg-white dark:bg-black/20 rounded-lg border border-gray-100 dark:border-white/5 overflow-hidden">
-                                        <table className="w-full text-left text-xs">
-                                            <thead className="bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
-                                                <tr>
-                                                    <th className="p-3 text-gray-500 font-bold uppercase">Fecha</th>
-                                                    <th className="p-3 text-gray-500 font-bold uppercase">Concepto</th>
-                                                    <th className="p-3 text-gray-500 font-bold uppercase text-right">Monto</th>
-                                                    <th className="p-3 text-gray-500 font-bold uppercase text-center">Estado</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                                                {/* 1. Payroll Movements (Source of Truth) */}
-                                                {(payrollMovements || [])
-                                                    .filter(m =>
-                                                        m.employee_id === detailEmployee.id &&
-                                                        m.status !== 'ANULADO' &&
-                                                        m.type !== 'REINICIO' &&
-                                                        (!detailEmployee.payrollStartDate || m.date >= detailEmployee.payrollStartDate)
-                                                    )
-                                                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                                                    .map(m => {
+                                    {/* 38.5 Detailed Ledger of Pending Movements (Attendance & Sanctions) */}
+                                    <div>
+                                        <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                            <FileText className="w-4 h-4 text-gray-400" />
+                                            Detalle de Movimientos Pendientes
+                                        </h4>
+                                        <div className="bg-white dark:bg-black/20 rounded-lg border border-gray-100 dark:border-white/5 overflow-hidden">
+                                            <table className="w-full text-left text-xs">
+                                                <thead className="bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
+                                                    <tr>
+                                                        <th className="p-3 text-gray-500 font-bold uppercase">Fecha</th>
+                                                        <th className="p-3 text-gray-500 font-bold uppercase">Concepto</th>
+                                                        <th className="p-3 text-gray-500 font-bold uppercase text-right">Monto</th>
+                                                        <th className="p-3 text-gray-500 font-bold uppercase text-center">Estado</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                                                    {displayedMovements.map(m => {
                                                         const meta = m.meta || {};
                                                         const isHoliday = meta.isHoliday || false;
                                                         const hasExtras = meta.extraAmount > 0;
+                                                        const isPending = m.status === 'PENDIENTE' || !m.status;
+                                                        const isVoid = m.status === 'ANULADO';
 
                                                         return (
-                                                            <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
-                                                                <td className="p-3 text-gray-900 dark:text-white">{new Date(m.date + 'T00:00:00').toLocaleDateString()}</td>
+                                                            <tr key={m.id} className={`hover:bg-gray-50 dark:hover:bg-white/5 ${isVoid ? 'opacity-60 grayscale' : ''}`}>
+                                                                <td className={`p-3 text-gray-900 dark:text-white ${isVoid ? 'line-through decoration-gray-400' : ''}`}>{new Date(m.date + 'T00:00:00').toLocaleDateString()}</td>
                                                                 <td className="p-3">
                                                                     <div className="flex flex-col">
                                                                         <span className="font-bold text-gray-700 dark:text-gray-300">
@@ -1241,87 +1367,65 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                                                 </td>
                                                                 <td className="p-3 text-center">
                                                                     <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 border border-yellow-200 dark:border-yellow-900/30">
-                                                                        PENDIENTE
+                                                                        {isPending ? 'PENDIENTE' : m.status}
                                                                     </span>
                                                                 </td>
                                                             </tr>
                                                         );
                                                     })
-                                                }
-                                                {/* 2. Sanctions */}
-                                                {(sanctions || [])
-                                                    .filter(s => s.employeeId === detailEmployee.id && s.type === 'DESCUENTO' && !s.deletedAt && (!detailEmployee.payrollStartDate || s.date >= detailEmployee.payrollStartDate))
-                                                    .map(s => (
-                                                        <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-white/5">
-                                                            <td className="p-3 text-gray-900 dark:text-white">{new Date(s.date + 'T00:00:00').toLocaleDateString()}</td>
-                                                            <td className="p-3">
-                                                                <span className="font-bold text-red-600 dark:text-red-400 block">SANCIÓN / DESCUENTO</span>
-                                                                <span className="text-[10px] text-gray-400">{s.description}</span>
-                                                            </td>
-                                                            <td className="p-3 text-right font-mono text-red-600 dark:text-red-400">
-                                                                -{formatMoney(s.amount || 0)}
-                                                            </td>
-                                                            <td className="p-3 text-center">
-                                                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-500 border border-red-200 dark:border-red-900/30">
-                                                                    PENDIENTE
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                }
-                                                {/* Empty State */}
-                                                {(payrollMovements || []).filter(m => m.employee_id === detailEmployee.id && m.status !== 'ANULADO' && m.type !== 'REINICIO' && (!detailEmployee.payrollStartDate || m.date >= detailEmployee.payrollStartDate)).length === 0 &&
-                                                    (sanctions || []).filter(s => s.employeeId === detailEmployee.id && s.type === 'DESCUENTO' && !s.deletedAt && (!detailEmployee.payrollStartDate || s.date >= detailEmployee.payrollStartDate)).length === 0 && (
+                                                    }
+                                                    {displayedMovements.length === 0 && (
                                                         <tr>
                                                             <td colSpan={4} className="p-6 text-center text-gray-400 italic">No hay movimientos pendientes para este periodo.</td>
                                                         </tr>
                                                     )}
-                                            </tbody>
-                                        </table>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* Recent Transactions (Simulated or Real if linked) */}
+                                    <div>
+                                        <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                                            <HistoryIcon className="w-4 h-4 text-gray-400" />
+                                            Últimos Movimientos
+                                        </h4>
+                                        {transactions && transactions.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {transactions
+                                                    .filter(t => t.description.includes(detailEmployee.name)) // Simple filter by name
+                                                    .slice(0, 5)
+                                                    .map(t => (
+                                                        <div key={t.id} className="flex justify-between items-center p-3 bg-white dark:bg-black/20 rounded-lg border border-gray-100 dark:border-white/5 text-sm">
+                                                            <div>
+                                                                <p className="font-bold text-gray-900 dark:text-white">{t.category}</p>
+                                                                <p className="text-xs text-gray-500">{new Date(t.date).toLocaleDateString()} - {t.description}</p>
+                                                            </div>
+                                                            <span className="font-mono font-bold text-red-500">-{formatMoney(t.amount)}</span>
+                                                        </div>
+                                                    ))}
+                                                {transactions.filter(t => t.description.includes(detailEmployee.name)).length === 0 && (
+                                                    <p className="text-sm text-gray-400 italic">No hay transacciones recientes registradas con este nombre.</p>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-400">No hay historial disponible.</p>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Recent Transactions (Simulated or Real if linked) */}
-                                <div>
-                                    <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                                        <HistoryIcon className="w-4 h-4 text-gray-400" />
-                                        Últimos Movimientos
-                                    </h4>
-                                    {transactions && transactions.length > 0 ? (
-                                        <div className="space-y-2">
-                                            {transactions
-                                                .filter(t => t.description.includes(detailEmployee.name)) // Simple filter by name
-                                                .slice(0, 5)
-                                                .map(t => (
-                                                    <div key={t.id} className="flex justify-between items-center p-3 bg-white dark:bg-black/20 rounded-lg border border-gray-100 dark:border-white/5 text-sm">
-                                                        <div>
-                                                            <p className="font-bold text-gray-900 dark:text-white">{t.category}</p>
-                                                            <p className="text-xs text-gray-500">{new Date(t.date).toLocaleDateString()} - {t.description}</p>
-                                                        </div>
-                                                        <span className="font-mono font-bold text-red-500">-{formatMoney(t.amount)}</span>
-                                                    </div>
-                                                ))}
-                                            {transactions.filter(t => t.description.includes(detailEmployee.name)).length === 0 && (
-                                                <p className="text-sm text-gray-400 italic">No hay transacciones recientes registradas con este nombre.</p>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-gray-400">No hay historial disponible.</p>
-                                    )}
+                                <div className="mt-6 pt-4 border-t border-gray-100 dark:border-white/10 flex justify-end">
+                                    <button
+                                        onClick={() => setDetailModalOpen(false)}
+                                        className="px-6 py-2 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold rounded-lg hover:bg-gray-200 dark:hover:bg-white/20"
+                                    >
+                                        Cerrar
+                                    </button>
                                 </div>
                             </div>
-
-                            <div className="mt-6 pt-4 border-t border-gray-100 dark:border-white/10 flex justify-end">
-                                <button
-                                    onClick={() => setDetailModalOpen(false)}
-                                    className="px-6 py-2 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold rounded-lg hover:bg-gray-200 dark:hover:bg-white/20"
-                                >
-                                    Cerrar
-                                </button>
-                            </div>
-                        </div>
-                    </div >
-                )
+                        </div >
+                    );
+                })()
             }
 
             {/* Concretar Nómina Modal */}
@@ -1455,7 +1559,10 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                         {/* Content */}
                         <div className="p-0 overflow-y-auto flex-1">
                             {(() => {
-                                const accrualData = calculateAccruedSalary(historyEmployee, records, calendarEvents, absences, sanctions);
+                                // Use End of Month to capture ALL records (including future ones)
+                                // This ensures that records for 13/12 appear even if today is 11/12 (Simulation Mode)
+                                const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+                                const accrualData = calculateAccruedSalary(historyEmployee, records, calendarEvents, absences, sanctions, endOfMonth);
 
                                 // 1. Breakdown of Current Month (Accrued)
                                 const breakdownMoves = (accrualData.breakdown || []).map(item => ({
@@ -1466,6 +1573,7 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                     amount: item.amount,
                                     time: item.time, // Pass through
                                     meta: item.meta, // Pass through
+                                    created_at: undefined, // Dynamic items don't have DB creation time
                                     isBreakdown: true
                                 }));
 
@@ -1478,23 +1586,47 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                         // we should not show it again here, as that causes visual double counting
                                         // and forces a confusing "REINICIO" adjustment.
                                         // We assume "breakdownMoves" (Dynamic) is the preferred detailed view for current period.
-                                        const isDuplicateInfo = breakdownMoves.some(b =>
-                                            b.date === m.date &&
-                                            (b.type === m.type || (b.type === 'WORKED' && m.type === 'ASISTENCIA')) &&
-                                            Math.abs(b.amount - m.amount) < 1 // Match amount to be safe
-                                        );
+                                        const isDuplicateInfo = breakdownMoves.some(b => {
+                                            const bDate = b.date.split('T')[0];
+                                            const mDate = m.date.split('T')[0];
+                                            if (bDate !== mDate) return false;
+
+                                            // Map b.type to Ledger Type for comparison
+                                            let targetType = b.type as string;
+                                            if (b.type === 'WORKED') targetType = 'ASISTENCIA';
+                                            if (b.type === 'HOLIDAY') targetType = 'ASISTENCIA'; // Generally stored as ASISTENCIA + meta.isHoliday
+                                            if (b.type === 'SANCTION') targetType = 'DESCUENTO';
+
+                                            // Check strict equality of mapped type
+                                            // We use loose comparison for amount to handle float diffs
+                                            return targetType === m.type && Math.abs(b.amount - m.amount) < 1;
+                                        });
                                         return !isDuplicateInfo;
                                     })
-                                    .map(item => ({
-                                        id: item.id,
-                                        date: item.date,
-                                        type: item.type,
-                                        description: item.description,
-                                        amount: item.amount,
-                                        time: '00:00', // Default for Ledger until we have timestamps
-                                        meta: { createdBy: item.created_by, origin: 'LEDGER', ...item.meta },
-                                        isBreakdown: false
-                                    }));
+                                    .map(item => {
+                                        let timeStr = '00:00';
+                                        if (item.meta && item.meta.checkIn) {
+                                            timeStr = item.meta.checkIn;
+                                        } else if (item.created_at) {
+                                            const d = new Date(item.created_at);
+                                            if (!isNaN(d.getTime())) {
+                                                timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                            }
+                                        }
+
+                                        return {
+                                            id: item.id,
+                                            date: item.date,
+                                            type: item.type,
+                                            description: item.description,
+                                            amount: item.amount,
+                                            status: item.status, // Pass status for rendering (e.g. ANULADO)
+                                            time: timeStr,
+                                            created_at: item.created_at, // Pass creation date for display
+                                            meta: { createdBy: item.created_by, origin: 'LEDGER', ...item.meta },
+                                            isBreakdown: false
+                                        };
+                                    });
 
                                 // 3. Calculate "Initial Balance" (Ghost Row)
                                 // Standard Logic: Balance = Initial + Sum(Movements)
@@ -1512,6 +1644,8 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                         description: 'Saldo Inicial / Arrastre anterior',
                                         amount: initialDiff,
                                         time: '',
+                                        status: 'ACTIVE',
+                                        created_at: '', // Ghost row
                                         meta: { origin: 'SYSTEM_CALCULATION' },
                                         isBreakdown: false
                                     });
@@ -1520,7 +1654,11 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                 const allMovements = [...breakdownMoves, ...ledgerMoves].sort((a, b) => {
                                     if (a.date === '---') return 1;
                                     if (b.date === '---') return -1;
-                                    return new Date(b.date).getTime() - new Date(a.date).getTime();
+                                    // STRICT AUDIT SORTING: Use created_at if available (Ledger), else date (Dynamic)
+                                    // This puts the most RECENTLY CREATED items at the top, regardless of their effective date.
+                                    const timeA = (a as any).created_at ? new Date((a as any).created_at).getTime() : new Date(a.date).getTime();
+                                    const timeB = (b as any).created_at ? new Date((b as any).created_at).getTime() : new Date(b.date).getTime();
+                                    return timeB - timeA;
                                 });
 
                                 const grandTotal = allMovements.reduce((sum, m) => sum + m.amount, 0);
@@ -1579,7 +1717,7 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                                         {allMovements.map((move) => (
                                                             <tr
                                                                 key={move.id}
-                                                                className="hover:bg-gray-50/50 dark:hover:bg-white/5 group transition-colors cursor-pointer border-b border-gray-50 dark:border-white/5"
+                                                                className={`hover:bg-gray-50/50 dark:hover:bg-white/5 group transition-colors cursor-pointer border-b border-gray-50 dark:border-white/5 ${(move as any).status === 'ANULADO' ? 'opacity-60 grayscale' : ''}`}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation(); // Ensure clean event
                                                                     setSelectedMovement(move);
@@ -1587,8 +1725,11 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                                             >
                                                                 <td className="p-3 whitespace-nowrap">
                                                                     <div className="flex flex-col">
-                                                                        <span className="text-gray-900 dark:text-white font-medium">
-                                                                            {move.date === '---' ? 'Inicio' : new Date(move.date).toLocaleDateString()}
+                                                                        <span className={`text-gray-900 dark:text-white font-medium ${(move as any).status === 'ANULADO' ? 'line-through decoration-gray-400' : ''}`}>
+                                                                            {/* Display Creation Date if available (Ledger), else Effective Date (Dynamic) */}
+                                                                            {move.date === '---' ? 'Inicio' :
+                                                                                ((move as any).created_at ? new Date((move as any).created_at).toLocaleDateString() : new Date(move.date).toLocaleDateString())
+                                                                            }
                                                                         </span>
                                                                         <span className="text-xs text-gray-400 flex items-center gap-1">
                                                                             <Clock className="w-3 h-3" />
@@ -1605,12 +1746,17 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                                                                     </span>
                                                                 </td>
                                                                 <td
-                                                                    className="p-3 text-gray-600 dark:text-gray-400 max-w-[200px]"
-                                                                    title="Click para ver detalle"
+                                                                    className="p-3 text-gray-600 dark:text-gray-400 max-w-[200px] cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                                                                    title="Click para ver nota completa"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setSelectedNote({ text: move.description, date: move.date });
+                                                                        setIsNoteModalOpen(true);
+                                                                    }}
                                                                 >
-                                                                    <div className="flex items-center gap-1">
-                                                                        <span className="truncate">{move.description || '-'}</span>
-                                                                        <AlertCircle className="w-3 h-3 opacity-0 group-hover:opacity-50 text-blue-500" />
+                                                                    <div className="flex items-center gap-1 group/note">
+                                                                        <span className="truncate group-hover/note:underline decoration-dotted underline-offset-2">{move.description || '-'}</span>
+                                                                        <Info className="w-3 h-3 opacity-0 group-hover/note:opacity-50 text-blue-500" />
                                                                     </div>
                                                                 </td>
                                                                 <td className="p-3 text-right font-mono font-bold">
@@ -1640,7 +1786,62 @@ export const PayrollManagement: React.FC<PayrollManagementProps> = ({ employees,
                 </div>
             )}
 
+            {/* Note Detail Modal */}
+            {isNoteModalOpen && selectedNote && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-gray-900 w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 overflow-hidden animate-scale-in">
+                        <div className="p-6">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                <FileText className="w-5 h-5 text-sushi-gold" />
+                                Detalle de la Nota
+                            </h3>
+                            <p className="text-xs text-gray-400 mb-2 uppercase font-bold">
+                                Correspondiente al registro del: <span className="text-gray-900 dark:text-white">{new Date(selectedNote.date + 'T00:00:00').toLocaleDateString()}</span>
+                            </p>
+                            <div className="bg-gray-50 dark:bg-white/5 p-4 rounded-xl border border-gray-100 dark:border-white/5 max-h-[60vh] overflow-y-auto">
+                                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                                    {selectedNote.text}
+                                </p>
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <button
+                                    onClick={() => setIsNoteModalOpen(false)}
+                                    className="px-6 py-2 bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white font-bold rounded-lg hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
+                                    autoFocus
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {showTutorial && <PayrollTutorial onClose={() => setShowTutorial(false)} />}
-        </div >
+            <SecurityConfirmationModal
+                isOpen={securityModalOpen}
+                onClose={() => setSecurityModalOpen(false)}
+                onConfirm={handleConfirmPayment}
+                title={modalMode === 'DISCOUNT' ? '¿Confirmar Sanción/Descuento?' : '¿Confirmar Pago de Nómina?'}
+                description={modalMode === 'DISCOUNT'
+                    ? `Se registrará un descuento de ${formatMoney(Math.abs(paymentAmount))} al empleado ${selectedEmployee?.name}. Motivo: ${paymentDescription || 'Sin motivo'}`
+                    : `Se registrará un pago de ${formatMoney(paymentAmount)} a ${selectedEmployee?.name}. ${resetCycle ? 'Se REINICIARÁ el ciclo de pago (Devengado a 0).' : 'Es un pago parcial o adelanto.'}`
+                }
+                actionType={modalMode === 'DISCOUNT' ? 'danger' : 'warning'}
+                confirmText={modalMode === 'DISCOUNT' ? 'Aplicar Descuento' : 'Registrar Pago'}
+            />
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+            />
+        </div>
     );
 };

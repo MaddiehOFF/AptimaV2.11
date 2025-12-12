@@ -4,6 +4,7 @@ import { ShoppingList, Supplier, SupplierProduct } from '../types';
 import { Search, Plus, Truck, Package, ShoppingCart, Trash2, Edit, Camera, Sparkles } from 'lucide-react';
 import { ShoppingListGenerator } from './ShoppingListGenerator';
 import { analyzeProductImage } from '../services/geminiService';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface SuppliersViewProps {
     suppliers: Supplier[];
@@ -25,6 +26,18 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
     // Supplier State
     const [showSupplierModal, setShowSupplierModal] = useState(false);
     const [supplierForm, setSupplierForm] = useState<Partial<Supplier>>({});
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     // Product State
     // Product State
@@ -51,13 +64,19 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
 
     const handleBulkDeleteProducts = async () => {
         if (selectedProductIds.length === 0) return;
-        if (!confirm(`¿Eliminar ${selectedProductIds.length} productos seleccionados?`)) return;
 
-        for (const id of selectedProductIds) {
-            await deleteProduct(id);
-        }
-        setSelectedProductIds([]);
-        alert('Productos eliminados correctamente.');
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Productos?',
+            message: `¿Eliminar ${selectedProductIds.length} productos seleccionados?`,
+            onConfirm: async () => {
+                for (const id of selectedProductIds) {
+                    await deleteProduct(id);
+                }
+                setSelectedProductIds([]);
+                alert('Productos eliminados correctamente.');
+            }
+        });
     };
 
     // AI SCAN HANDLER
@@ -85,6 +104,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                         const item = Array.isArray(result) ? result[0] : result;
                         setProductForm(prev => ({
                             ...prev,
+                            photoUrl: base64, // SAVE THE PHOTO URL
                             name: item.name || prev.name,
                             brand: item.brand || prev.brand,
                             unit: item.unit || prev.unit || 'un',
@@ -93,7 +113,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                         }));
                     }
                 } else {
-                    alert("No se pudo analizar la imagen.");
+                    // Even if AI fails, keep the photo?
+                    // Yes, user might just want to upload photo.
+                    setProductForm(prev => ({
+                        ...prev,
+                        photoUrl: base64 // SAVE THE PHOTO URL ANYWAY
+                    }));
+                    alert("Imagen cargada. No se pudieron detectar datos automáticos.");
                 }
             } catch (err: any) {
                 console.error("Error processing image:", err);
@@ -205,12 +231,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
 
     const handleDeleteSupplier = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('¿Eliminar proveedor? Se borrarán sus productos asociados.')) {
-            deleteSupplier(id);
-            // Cascade delete (mock logic, real db should cascade via FK or trigger)
-            const supplierProds = products.filter(p => p.supplierId === id);
-            supplierProds.forEach(p => deleteProduct(p.id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Proveedor?',
+            message: '¿Eliminar proveedor? Se borrarán sus productos asociados.',
+            onConfirm: () => {
+                deleteSupplier(id);
+                // Cascade delete (mock logic, real db should cascade via FK or trigger)
+                const supplierProds = products.filter(p => p.supplierId === id);
+                supplierProds.forEach(p => deleteProduct(p.id));
+            }
+        });
     };
 
     const handleSaveProduct = (e: React.FormEvent) => {
@@ -267,9 +298,14 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
     };
 
     const handleDeleteProduct = (id: string) => {
-        if (confirm('¿Eliminar producto?')) {
-            deleteProduct(id);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Producto?',
+            message: '¿Eliminar producto?',
+            onConfirm: () => {
+                deleteProduct(id);
+            }
+        });
     };
 
     const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'Desconocido';
@@ -403,6 +439,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                                             className="rounded border-gray-300 dark:border-white/10"
                                         />
                                     </th>
+                                    <th className="p-4 w-16">Foto</th>
                                     <th className="p-4">Producto</th>
                                     <th className="p-4">Proveedor</th>
                                     <th className="p-4">Precio</th>
@@ -420,6 +457,15 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                                                 onChange={() => handleToggleSelectProduct(p.id)}
                                                 className="rounded border-gray-300 dark:border-white/10"
                                             />
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-white/5 overflow-hidden border border-gray-200 dark:border-white/10 shrink-0">
+                                                {p.photoUrl ? (
+                                                    <img src={p.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-gray-400"><Package className="w-5 h-5" /></div>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="p-4">
                                             <p className="font-bold dark:text-white">{p.name}</p>
@@ -544,33 +590,57 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                                 {/* Removed duplicate supplier select that was here */}
 
                                 {/* AI SCANNER BUTTON - DRAG & DROP AREA */}
-                                <div
-                                    className={`flex items-center gap-4 p-4 rounded-lg border-2 border-dashed transition-all cursor-pointer ${isDragging ? 'border-sushi-gold bg-sushi-gold/10' : 'border-blue-100 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-900/20'}`}
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <div className="p-3 bg-blue-100 dark:bg-blue-500/20 rounded-full text-blue-600 dark:text-blue-400">
-                                        {isScanning ? <Sparkles className="w-6 h-6 animate-pulse" /> : <Camera className="w-6 h-6" />}
+                                {/* IMAGE PREVIEW OR UPLOAD AREA */}
+                                {productForm.photoUrl ? (
+                                    <div className="relative w-full h-40 bg-gray-100 dark:bg-black/30 rounded-lg overflow-hidden group border border-gray-200 dark:border-white/10">
+                                        <img src={productForm.photoUrl} alt="Preview" className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="p-2 bg-white rounded-full text-blue-600 hover:bg-blue-50 transition-colors"
+                                                title="Cambiar Foto"
+                                            >
+                                                <Edit className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setProductForm(prev => ({ ...prev, photoUrl: undefined }))}
+                                                className="p-2 bg-white rounded-full text-red-600 hover:bg-red-50 transition-colors"
+                                                title="Eliminar Foto"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="flex-1">
-                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                                            {isDragging ? '¡Suelta la imagen aquí!' : 'Escanear Producto (Click o Arrastrar)'}
-                                        </p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                                            {isScanning ? 'Analizando imagen...' : 'Sube una foto y la IA completará los datos.'}
-                                        </p>
+                                ) : (
+                                    <div
+                                        className={`flex items-center gap-4 p-4 rounded-lg border-2 border-dashed transition-all cursor-pointer ${isDragging ? 'border-sushi-gold bg-sushi-gold/10' : 'border-blue-100 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-900/20'}`}
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        <div className="p-3 bg-blue-100 dark:bg-blue-500/20 rounded-full text-blue-600 dark:text-blue-400">
+                                            {isScanning ? <Sparkles className="w-6 h-6 animate-pulse" /> : <Camera className="w-6 h-6" />}
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+                                                {isDragging ? '¡Suelta la imagen aquí!' : 'Foto del Producto (Click o Arrastrar)'}
+                                            </p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                {isScanning ? 'Analizando imagen...' : 'Sube una foto y la IA completará los datos.'}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        className="hidden"
-                                        accept="image/*"
-                                        onChange={handleImageUpload}
-                                    />
-                                </div>
-
+                                )}
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                />
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1">Nombre Producto {productForm.name && <span className="text-green-500 text-[10px] ml-2">(Detectado)</span>}</label>
                                     <input type="text" value={productForm.name || ''} onChange={e => setProductForm({ ...productForm, name: e.target.value })} className="w-full p-2 rounded border dark:bg-black/20 dark:border-white/10 dark:text-white" placeholder="Ej. Queso Tybo (Confirmar datos)" required />
@@ -813,6 +883,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ suppliers, addSupp
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="ELIMINAR"
+            />
+        </div >
     );
 };

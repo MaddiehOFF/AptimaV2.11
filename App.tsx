@@ -25,11 +25,12 @@ import { MessagingSystem } from './components/MessagingSystem';
 import { ProductManagement } from './components/ProductManagement';
 import { FinanceDashboard } from './components/FinanceDashboard';
 import { WalletView } from './components/WalletView';
+import { WalletAssistantChat } from './components/WalletAssistantChat';
 import { RoyaltiesManagement } from './components/RoyaltiesManagement';
 import { StatisticsDashboard } from './components/StatisticsDashboard';
 import { SettingsView } from './components/SettingsView';
 import { BudgetRequestsView } from './components/BudgetRequestsView';
-import { Employee, OvertimeRecord, View, SanctionRecord, User, AbsenceRecord, Task, ForumPost, AdminTask, InventoryItem, InventorySession, CashShift, Product, WalletTransaction, Partner, CalculatorProjection, FixedExpense, ChecklistSnapshot, InternalMessage, EmployeeNotice, CoordinatorNote, CalendarEvent, RolePermissions, RoyaltyHistoryItem, Supplier, SupplierProduct, ShoppingList, BudgetRequest, UserActivityLog, OfficeStickyNote, OfficeDocument, PayrollMovement } from './types';
+import { Employee, OvertimeRecord, View, SanctionRecord, User, AbsenceRecord, Task, ForumPost, AdminTask, InventoryItem, InventorySession, CashShift, Product, WalletTransaction, Partner, CalculatorProjection, FixedExpense, ChecklistSnapshot, InternalMessage, EmployeeNotice, CoordinatorNote, CalendarEvent, RolePermissions, RoyaltyHistoryItem, Supplier, SupplierProduct, ShoppingList, BudgetRequest, UserActivityLog, OfficeStickyNote, OfficeDocument, PayrollMovement, PermissionKey, UserRole } from './types';
 import { Menu, Bell, X } from 'lucide-react';
 import { ActivityFeedWidget } from './components/widgets/AdminWidgets';
 import { supabase } from './supabaseClient';
@@ -48,15 +49,15 @@ const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
     'BARRA': ['canViewCalendar', 'canViewChecklist', 'canViewInventory', 'canViewProfile', 'canViewCommunication'],
     'SALON': ['canViewCalendar', 'canViewChecklist', 'canViewProfile', 'canViewCommunication'],
     'CAJA': ['canViewCash', 'canViewCalendar', 'canViewChecklist', 'canViewProfile', 'canViewCommunication'],
-    'ENCARGADO': ['canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication'],
+    'ENCARGADO': ['canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication', 'canViewSuppliers', 'canViewBudgetRequests'],
     'REPARTIDOR': ['canViewCalendar', 'canViewCommunication', 'canViewProfile'],
     'DELIVERY': ['canViewCalendar', 'canViewCommunication', 'canViewProfile', 'canViewChecklist'],
-    'EMPRESA': ['canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication'],
-    'GERENTE': ['canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication'],
-    'COORDINADOR': ['canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication'],
-    'JEFE_COCINA': ['canViewInventory', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication'],
-    'ADMINISTRATIVO': ['canViewCash', 'canViewFinancials', 'canViewCalendar', 'canViewProfile', 'canViewCommunication'],
-    'MOSTRADOR': ['canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewCommunication', 'canViewCash'],
+    'EMPRESA': ['canViewDashboard', 'canViewHR', 'canViewFiles', 'canViewOvertime', 'canViewPayroll', 'canViewSanctions', 'canViewUsers', 'canViewSettings', 'canViewOffice', 'canViewProducts', 'canViewFinance', 'canViewWallet', 'canViewRoyalties', 'canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication', 'canViewSuppliers', 'canViewBudgetRequests'],
+    'GERENTE': ['canViewDashboard', 'canViewHR', 'canViewFiles', 'canViewOvertime', 'canViewPayroll', 'canViewSanctions', 'canViewUsers', 'canViewSettings', 'canViewOffice', 'canViewProducts', 'canViewFinance', 'canViewWallet', 'canViewRoyalties', 'canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication', 'canViewSuppliers', 'canViewBudgetRequests'],
+    'COORDINADOR': ['canViewDashboard', 'canViewHR', 'canViewFiles', 'canViewOvertime', 'canViewPayroll', 'canViewSanctions', 'canViewOffice', 'canViewProducts', 'canViewFinance', 'canViewWallet', 'canViewInventory', 'canViewCash', 'canViewFinancials', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication', 'canViewSuppliers', 'canViewBudgetRequests'],
+    'JEFE_COCINA': ['canViewInventory', 'canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewForum', 'canViewCommunication', 'canViewSuppliers'],
+    'ADMINISTRATIVO': ['canViewDashboard', 'canViewCash', 'canViewFinancials', 'canViewCalendar', 'canViewProfile', 'canViewCommunication', 'canViewSuppliers', 'canViewBudgetRequests', 'canViewProducts', 'canViewFinance', 'canViewWallet'],
+    'MOSTRADOR': ['canViewChecklist', 'canViewCalendar', 'canViewProfile', 'canViewCommunication', 'canViewCash', 'canViewBudgetRequests'],
 };
 
 const App: React.FC = () => {
@@ -129,9 +130,23 @@ const App: React.FC = () => {
     const [currentView, setView] = useState<View>(View.DASHBOARD);
     const [isLoading, setIsLoading] = useState(true);
     const [showProfile, setShowProfile] = useState(false);
+    const [isChatMinimized, setIsChatMinimized] = useState(true);
+    const [isChatVisible, setIsChatVisible] = useState(false); // Default hidden until triggered
+    const [auditData, setAuditData] = useState<{ id: string, name: string, amount: number }[]>([]);
+
+    useEffect(() => {
+        const saved = localStorage.getItem('wallet_audit_data_v2');
+        if (saved) {
+            try {
+                setAuditData(JSON.parse(saved));
+            } catch (e) {
+                setAuditData([]);
+            }
+        }
+    }, []);
 
     // Activity Tracker
-    useActivityTracker(currentView, currentUser?.id);
+    useActivityTracker(currentView, currentUser?.id || currentMember?.id);
 
     // Simulate Startup Loading with Fade Out
     useEffect(() => {
@@ -353,24 +368,41 @@ const App: React.FC = () => {
 
             const newReadIds = new Set(localReadIds);
 
+            setEmployeeNotices(prev => prev.map(n => {
+                if (unreadNotices.find(un => un.id === n.id)) {
+                    return { ...n, readBy: [...n.readBy, currentUser.id] };
+                }
+                return n;
+            }));
+
+            setInternalMessages(prev => prev.map(m => {
+                if (unreadMessages.find(um => um.id === m.id)) {
+                    return { ...m, readBy: [...m.readBy, currentUser.id] };
+                }
+                return m;
+            }));
+
+            setDocuments(prev => prev.map(d => {
+                if (unreadDocs.find(ud => ud.id === d.id)) {
+                    return { ...d, readBy: [...(d.readBy || []), currentUser.id] };
+                }
+                return d;
+            }));
+
+            // Sync with Supabase (Background)
             unreadNotices.forEach(n => {
-                newReadIds.add(n.id);
                 const newReadBy = [...n.readBy, currentUser.id];
                 supabase.from('employee_notices').update({ data: { ...n, readBy: newReadBy } }).eq('id', n.id).then();
             });
 
             unreadMessages.forEach(m => {
-                newReadIds.add(m.id);
                 const newReadBy = [...m.readBy, currentUser.id];
                 supabase.from('internal_messages').update({ data: { ...m, readBy: newReadBy } }).eq('id', m.id).then();
             });
 
             unreadDocs.forEach(d => {
-                newReadIds.add(d.id);
                 const newReadBy = [...(d.readBy || []), currentUser.id];
                 supabase.from('office_documents').update({ data: { ...d, readBy: newReadBy } }).eq('id', d.id).then();
-                // Local update
-                setDocuments(prev => prev.map(pd => pd.id === d.id ? { ...d, readBy: newReadBy } : pd));
             });
 
             setLocalReadIds(newReadIds);
@@ -728,6 +760,12 @@ const App: React.FC = () => {
 
     const royaltyPool = partners.reduce((sum, p) => sum + (p.balance || 0), 0);
     const pendingPayroll = employees.filter(e => e.active && e.paymentModality !== 'DIARIO').reduce((acc, curr) => acc + calculateAccruedSalary(curr, records, calendarEvents, absences).accruedAmount, 0);
+
+    // Calculate Total Balance (Global for AI Context)
+    const totalBalance = walletTransactions
+        .filter(t => !t.deletedAt && t.status === 'COMPLETED')
+        .reduce((sum, t) => t.type === 'INCOME' ? sum + t.amount : sum - t.amount, 0);
+
     const pendingDebt = pendingPayroll + royaltyPool;
 
     if (loadingEmployees && users.length === 0 && employees.length === 0) {
@@ -782,356 +820,198 @@ const App: React.FC = () => {
                             <ActiveUsersWidget users={users} employees={employees} currentUserEmail={currentUser?.email} />
                         </div>
 
+                        {/* Global AI Assistant */}
+                        {currentUser && currentView === View.WALLET && isChatVisible && (
+                            <WalletAssistantChat
+                                isOpen={true} // Always open for global persistence
+                                onClose={() => setIsChatVisible(false)} // Hides the chat
+                                defaultMinimized={true}
+                                isMinimizedOverride={isChatMinimized}
+                                onMinimizeChange={setIsChatMinimized}
+                                context={{
+                                    balance: totalBalance || 0,
+                                    expenses: fixedExpenses || [],
+                                    transactions: walletTransactions || [],
+                                    pendingDebt: pendingDebt || 0,
+                                    userName: currentUser.name,
+                                    partners: partners || [], // New Context
+                                    royaltyPool: royaltyPool || 0, // New Context
+                                    royaltyHistory: royaltyHistory || [], // New Context
+                                    auditData: auditData || [] // New Context: Conteo
+                                }}
+                            />
+                        )}
+
                         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
                             {/* ADMIN VIEWS */}
-                            {currentUser && (
-                                <>
+                            {/* UNIFIED VIEW RENDERER (Admin & Employees) */}
+                            {(currentUser || currentMember) && (() => {
+                                // 1. Determine Effective User Props for Components
+                                // This ensures components like OvertimeLog receive the expected "currentUser" object even for Employees
+                                const roleMapping: Record<string, UserRole> = {
+                                    'EMPRESA': 'ADMIN',
+                                    'GERENTE': 'MANAGER',
+                                    'COORDINADOR': 'COORDINADOR',
+                                    'ENCARGADO': 'ENCARGADO',
+                                    'CAJA': 'CAJERO',
+                                    'ADMINISTRATIVO': 'MANAGER',
+                                    'JEFE_COCINA': 'ENCARGADO'
+                                };
 
-                                    {currentView === View.DASHBOARD &&
-                                        <Dashboard
-                                            employees={employees}
-                                            records={records}
-                                            tasks={adminTasks}
-                                            inventory={inventorySessions}
-                                            sanctions={sanctions}
-                                            cashShifts={cashShifts}
-                                            currentUser={currentUser}
-                                            setView={setView}
-                                            calendarEvents={calendarEvents}
-                                            setCalendarEvents={setCalendarEvents}
-                                            absences={absences}
-                                            holidays={holidays}
-                                            messages={internalMessages}
-                                            checklistSnapshots={checklistSnapshots}
-                                            notices={employeeNotices}
-                                            onMarkNoticeSeen={handleMarkNoticeSeen} // Pass handler
-                                            onApproveSanction={handleApproveSanction}
-                                            onAddEvent={addCalendarEvent}
-                                            budgetRequests={budgetRequests}
-                                        />
+                                const mappedRole = currentMember ? (roleMapping[currentMember.role as string] || 'CAJERO') : 'CAJERO';
+                                const memberPerms = (currentMember && rolePermissions[currentMember.role as string]) || [];
+
+                                const effectiveUser: User = currentUser || {
+                                    id: currentMember!.id,
+                                    name: currentMember!.name,
+                                    role: mappedRole,
+                                    email: `${currentMember!.name.replace(/\s+/g, '.').toLowerCase()}@system`,
+                                    username: currentMember!.name,
+                                    password: '',
+                                    photoUrl: currentMember!.photoUrl,
+                                    permissions: {
+                                        superAdmin: ['EMPRESA', 'GERENTE'].includes(currentMember!.role as string),
+                                        viewHr: memberPerms.includes('canViewHR'),
+                                        manageHr: false,
+                                        viewOps: memberPerms.includes('canViewOvertime'),
+                                        manageOps: false,
+                                        viewFinance: memberPerms.includes('canViewFinance'),
+                                        manageFinance: false,
+                                        viewInventory: memberPerms.includes('canViewInventory'),
+                                        manageInventory: false,
                                     }
-                                    {currentView === View.EMPLOYEES && (currentUser.permissions.viewHr ? <EmployeeManagement employees={employees} setEmployees={setEmployees} sanctions={sanctions} customRoles={customRoles} /> : <AccessDenied />)}
-                                    {currentView === View.FILES && (currentUser.permissions.viewHr ? <EmployeeFiles employees={employees} setEmployees={setEmployees} sanctions={sanctions} absences={absences} tasks={tasks} setTasks={setTasks} checklistSnapshots={checklistSnapshots} notes={coordinatorNotes} setNotes={setCoordinatorNotes} currentUser={currentUser} users={users} /> : <AccessDenied />)}
-                                    {currentView === View.OVERTIME && ((currentUser.permissions.viewOps || currentUser.permissions.manageOps) ? <OvertimeLog employees={employees} records={records} setRecords={setRecords} absences={absences} setAbsences={setAbsences} sanctions={sanctions} setSanctions={setSanctions} holidays={holidays} setHolidays={setHolidays} currentUserName={currentUser.name} currentUserId={currentUser.id} currentUserRole={currentUser.role} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onAddEvent={addCalendarEvent} onDeleteEvent={deleteCalendarEvent} payrollMovements={payrollMovements} setPayrollMovements={setPayrollMovements} /> : <AccessDenied />)}
-                                    {currentView === View.PAYROLL && (currentUser.permissions.viewFinance ?
-                                        <PayrollManagement
-                                            employees={employees}
-                                            setEmployees={setEmployees}
-                                            transactions={walletTransactions}
-                                            setTransactions={setWalletTransactions}
-                                            currentUser={currentUser}
-                                            records={records}
-                                            calendarEvents={calendarEvents}
-                                            absences={absences}
-                                            products={products || []}
-                                            sanctions={sanctions}
-                                            payrollMovements={payrollMovements}
-                                            setPayrollMovements={setPayrollMovements}
-                                        />
-                                        : <AccessDenied />)
+                                };
+
+                                // 2. Helper for Granular Permission Checks
+                                const hasPermission = (key: PermissionKey): boolean => {
+                                    if (currentUser) {
+                                        if (currentUser.permissions.superAdmin || currentUser.role === 'ADMIN') return true;
+                                        // Map legacy UserPermissions to PermissionKey
+                                        const mapping: Partial<Record<PermissionKey, boolean>> = {
+                                            'canViewHR': currentUser.permissions.viewHr,
+                                            'canViewOvertime': currentUser.permissions.viewOps || currentUser.permissions.manageOps,
+                                            'canViewFinance': currentUser.permissions.viewFinance,
+                                            'canViewInventory': currentUser.permissions.viewInventory,
+                                            'canViewDashboard': true, // Admins usually see dashboard
+                                            // Add others as needed, defaulting to false if undefined
+                                        };
+                                        return !!mapping[key];
                                     }
-                                    {currentView === View.SANCTIONS && (currentUser.permissions.viewOps ? <SanctionsLog employees={employees} sanctions={sanctions} setSanctions={setSanctions} currentUser={currentUser} addEmployeeNotice={addEmployeeNotice} /> : <AccessDenied />)}
-                                    {currentView === View.USERS && (currentUser.permissions.superAdmin ? <UserManagement users={users} setUsers={setUsers} currentUser={currentUser} /> : <AccessDenied />)}
-                                    {currentView === View.SETTINGS && (currentUser.permissions.superAdmin ? <SettingsView rolePermissions={rolePermissions} setRolePermissions={setRolePermissions} customRoles={customRoles} setCustomRoles={setCustomRoles} restrictLateralMessaging={restrictLateralMessaging} setRestrictLateralMessaging={setRestrictLateralMessaging} onExportBackup={handleExportBackup} /> : <AccessDenied />)}
-                                    {currentView === View.AI_REPORT && <AIReport employees={employees} records={records} sanctions={sanctions} />}
-                                    {currentView === View.FORUM && <ForumBoard posts={posts} setPosts={setPosts} currentUser={currentUser} currentMember={currentMember} />}
-
-                                    {currentView === View.OFFICE && (
-                                        <AdministrativeOffice
-                                            currentUser={currentUser}
-                                            users={users}
-                                            tasks={adminTasks}
-                                            setTasks={setAdminTasks} // Passed for AdminHub
-                                            activityLogs={userActivityLogs}
-                                            onComposeMessage={(userId) => {
-                                                setComposeRecipient(userId);
-                                                setView(View.INTERNAL_MAIL);
-                                            }}
-                                            calendarEvents={calendarEvents} // Pass real calendar events
-                                            onAddCalendarEvent={addCalendarEvent}
-                                            // Props for Calendar Widget parity
-                                            records={records}
-                                            cashShifts={cashShifts}
-                                            absences={absences}
-                                            holidays={holidays}
-                                            employees={employees}
-                                            inventorySessions={inventorySessions}
-                                            // Props for Widgets (Phase 9)
-                                            internalMessages={internalMessages}
-                                            sanctions={sanctions}
-                                            employeeNotices={employeeNotices}
-                                            checklistSnapshots={checklistSnapshots}
-                                            budgetRequests={budgetRequests}
-                                            officeNotes={officeNotes}
-                                            onAddOfficeNote={addOfficeNote}
-                                            onUpdateOfficeNote={updateOfficeNote}
-                                            onRemoveOfficeNote={removeOfficeNote}
-                                            documents={documents}
-                                            setDocuments={setDocuments}
-                                        />
-                                    )}
-                                    {currentView === View.INTERNAL_MAIL && (
-                                        <InternalMail
-                                            currentUser={currentUser}
-                                            messages={internalMessages}
-                                            setMessages={setInternalMessages}
-                                            employees={employees}
-                                            users={users}
-                                            recipient={composeRecipient}
-                                        />
-                                    )}
-
-                                    {currentView === View.INVENTORY && (currentUser.permissions.viewInventory ? <InventoryManager items={supplierProducts} sessions={inventorySessions} setSessions={setInventorySessions} userName={currentUser.name} /> : <AccessDenied />)}
-                                    {currentView === View.CASH_REGISTER && <CashRegister shifts={cashShifts} setShifts={setCashShifts} userName={currentUser.name} transactions={walletTransactions} setTransactions={setWalletTransactions} />}
-
-                                    {/* Product and Finance Views */}
-                                    {currentView === View.SUPPLIERS && (currentUser.permissions.viewInventory ?
-                                        <SuppliersView
-                                            suppliers={suppliers}
-                                            addSupplier={suppliersHook.add}
-                                            updateSupplier={suppliersHook.update}
-                                            deleteSupplier={suppliersHook.remove}
-                                            products={supplierProducts}
-                                            addProduct={supplierProductsHook.add}
-                                            updateProduct={supplierProductsHook.update}
-                                            deleteProduct={supplierProductsHook.remove}
-                                            shoppingLists={shoppingLists}
-                                            setShoppingLists={setShoppingLists}
-                                            userName={currentUser?.name || 'Usuario'}
-                                        />
-                                        : <AccessDenied />
-                                    )}
-                                    {currentView === View.BUDGET_REQUESTS && (
-                                        <BudgetRequestsView
-                                            currentUser={currentUser}
-                                            users={users}
-                                            requests={budgetRequests}
-                                            walletTransactions={walletTransactions}
-                                            cashShifts={cashShifts}
-                                        />
-                                    )}
-                                    {currentView === View.PRODUCTS && (currentUser.permissions.viewFinance ? <ProductManagement products={products} setProducts={setProducts} /> : <AccessDenied />)}
-                                    {currentView === View.FINANCE && (currentUser.permissions.viewFinance ?
-                                        <FinanceDashboard
-                                            products={products}
-                                            setTransactions={setWalletTransactions}
-                                            transactions={walletTransactions}
-                                            projections={projections}
-                                            setProjections={setProjections}
-                                            userName={currentUser.name}
-                                            cashShifts={cashShifts}
-                                            partners={partners}
-                                            setPartners={setPartners}
-                                            addRoyaltyHistory={addRoyaltyHistory}
-                                            supplierProducts={supplierProducts}
-                                            inventorySessions={inventorySessions}
-                                        />
-                                        : <AccessDenied />)
+                                    if (currentMember) {
+                                        return rolePermissions[currentMember.role]?.includes(key) || false;
                                     }
-                                    {currentView === View.WALLET && (currentUser.permissions.viewFinance ?
-                                        <WalletView
-                                            transactions={walletTransactions}
-                                            setTransactions={setWalletTransactions}
-                                            pendingDebt={pendingDebt}
-                                            userName={currentUser.name}
-                                            fixedExpenses={fixedExpenses}
-                                            setFixedExpenses={setFixedExpenses}
-                                            employees={employees}
-                                            currentUser={currentUser}
-                                        />
-                                        : <AccessDenied />)
-                                    }
-                                    {currentView === View.ROYALTIES && (currentUser.permissions.viewFinance ?
-                                        <RoyaltiesManagement
-                                            partners={partners}
-                                            setPartners={setPartners}
-                                            royaltyPool={royaltyPool}
-                                            setTransactions={setWalletTransactions}
-                                            transactions={walletTransactions}
-                                            userName={currentUser.name}
-                                            royaltyHistory={royaltyHistory}
-                                            addRoyaltyHistory={addRoyaltyHistory}
-                                        />
-                                        : <AccessDenied />)
-                                    }
-                                    {currentView === View.STATISTICS && (currentUser.permissions.viewFinance ?
-                                        <StatisticsDashboard
-                                            cashShifts={cashShifts}
-                                            walletTransactions={walletTransactions}
-                                        />
-                                        : <AccessDenied />)
-                                    }
+                                    return false;
+                                };
 
-                                    {currentView === View.AI_FOCUS && <ConstructionView title="Enfoque IA 2.0" description="Estamos entrenando modelos predictivos para anticipar la demanda de pedidos y optimizar turnos." />}
-                                </>
-                            )}
-
-                            {/* MEMBER VIEWS */}
-                            {currentMember && (
-                                <>
-                                    {currentView === View.MEMBER_HOME && (
-                                        <MemberView
-                                            currentView={currentView}
-                                            member={currentMember}
-                                            records={records}
-                                            absences={absences}
-                                            sanctions={sanctions}
-                                            tasks={tasks}
-                                            setTasks={setTasks}
-                                            posts={posts}
-                                            setPosts={setPosts}
-                                            setView={setView}
-                                            checklistSnapshots={checklistSnapshots}
-                                            setChecklistSnapshots={setChecklistSnapshots}
-                                            holidays={holidays}
-                                            onUpdateSanction={handleUpdateSanction}
-                                            calendarEvents={calendarEvents}
-                                            rolePermissions={rolePermissions}
-                                            onAlert={handleSendNotice}
-                                            // Coordinator Props
-                                            employees={employees}
-                                            notices={employeeNotices}
-                                            onMarkNoticeSeen={handleMarkNoticeSeen}
-                                            onApproveSanction={handleApproveSanction}
-                                            cashShifts={cashShifts}
-                                            inventory={inventorySessions}
-                                            transactions={walletTransactions}
-                                            messages={internalMessages}
-                                            payrollMovements={payrollMovements}
-                                        />
-                                    )}
-                                    {(currentView === View.MEMBER_CALENDAR || currentView === View.MEMBER_TASKS || currentView === View.MEMBER_FILE || currentView === View.MEMBER_FORUM) && (
-                                        <MemberView
-                                            currentView={currentView}
-                                            member={currentMember}
-                                            records={records}
-                                            absences={absences}
-                                            sanctions={sanctions}
-                                            tasks={tasks}
-                                            setTasks={setTasks}
-                                            posts={posts}
-                                            setPosts={setPosts}
-                                            checklistSnapshots={checklistSnapshots}
-                                            setChecklistSnapshots={setChecklistSnapshots}
-                                            holidays={holidays}
-                                            onUpdateSanction={handleUpdateSanction}
-                                            calendarEvents={calendarEvents}
-                                            rolePermissions={rolePermissions}
-                                            onAlert={handleSendNotice}
-                                            payrollMovements={payrollMovements}
-                                        />
-                                    )}
-                                    {currentView === View.INTERNAL_MAIL && (
-                                        <InternalMail
-                                            currentUser={currentMember as any}
-                                            messages={internalMessages}
-                                            setMessages={setInternalMessages}
-                                            employees={employees}
-                                            users={users}
-                                        />
-                                    )}
-                                    {currentView === View.BUDGET_REQUESTS && (
-                                        <BudgetRequestsView
-                                            currentUser={currentMember}
-                                            users={users}
-                                            requests={budgetRequests}
-                                            walletTransactions={walletTransactions}
-                                            cashShifts={cashShifts}
-                                        />
-                                    )}
-
-                                    {/* COORDINATOR ADMIN MODULES */}
-                                    {currentMember.role === 'COORDINADOR' && (
-                                        <>
-                                            {currentView === View.OVERTIME &&
-                                                <OvertimeLog
+                                return (
+                                    <>
+                                        {/* DASHBOARD */}
+                                        {currentView === View.DASHBOARD && (
+                                            (currentUser || hasPermission('canViewDashboard')) ?
+                                                <Dashboard
                                                     employees={employees}
                                                     records={records}
-                                                    setRecords={setRecords}
-                                                    absences={absences}
-                                                    setAbsences={setAbsences}
+                                                    tasks={adminTasks}
+                                                    inventory={inventorySessions}
                                                     sanctions={sanctions}
-                                                    setSanctions={setSanctions}
-                                                    holidays={holidays}
-                                                    setHolidays={setHolidays}
-                                                    currentUserName={currentMember.name}
-                                                    currentUserId={currentMember.id}
-                                                    currentUserRole={currentMember.role}
+                                                    cashShifts={cashShifts}
+                                                    currentUser={effectiveUser}
+                                                    setView={setView}
                                                     calendarEvents={calendarEvents}
                                                     setCalendarEvents={setCalendarEvents}
-                                                    payrollMovements={payrollMovements}
-                                                    setPayrollMovements={setPayrollMovements}
-                                                />
-                                            }
-                                            {currentView === View.FILES &&
-                                                <EmployeeFiles
-                                                    employees={employees}
-                                                    setEmployees={setEmployees}
-                                                    sanctions={sanctions}
                                                     absences={absences}
-                                                    tasks={tasks}
-                                                    setTasks={setTasks}
+                                                    holidays={holidays}
+                                                    messages={internalMessages}
                                                     checklistSnapshots={checklistSnapshots}
-                                                    notes={coordinatorNotes}
-                                                    setNotes={setCoordinatorNotes}
-                                                    currentUser={{
-                                                        id: currentMember.id,
-                                                        name: currentMember.name,
-                                                        role: 'COORDINADOR',
-                                                        email: 'coord@system',
-                                                        username: currentMember.name,
-                                                        password: '',
-                                                        permissions: DEFAULT_ROLE_PERMISSIONS['COORDINADOR'] as any
-                                                    }}
-                                                    users={users}
-                                                />
-                                            }
-                                            {currentView === View.SANCTIONS &&
-                                                <SanctionsLog
-                                                    employees={employees}
-                                                    sanctions={sanctions}
-                                                    setSanctions={setSanctions}
-                                                    currentUser={{
-                                                        id: currentMember.id,
-                                                        name: currentMember.name,
-                                                        role: 'COORDINADOR',
-                                                        email: 'coord@system',
-                                                        username: currentMember.name,
-                                                        password: '',
-                                                        permissions: DEFAULT_ROLE_PERMISSIONS['COORDINADOR'] as any
-                                                    }}
-                                                />
-                                            }
-                                        </>
-                                    )}
-                                    {/* Member Admin-like Views */}
-                                    {currentView === View.NOTICES && (
-                                        <EmployeeNotices
-                                            currentUser={{
-                                                id: currentMember.id,
-                                                name: currentMember.name,
-                                                role: currentMember.role as any,
-                                                email: 'member@system',
-                                                username: currentMember.name,
-                                                password: '',
-                                                permissions: rolePermissions[currentMember.role] || [] as any
-                                            }}
-                                            notices={employeeNotices}
-                                            setNotices={setEmployeeNotices}
-                                        />
-                                    )}
-                                    {currentView === View.INVENTORY && (
-                                        <InventoryManager items={supplierProducts} sessions={inventorySessions} setSessions={setInventorySessions} userName={currentMember.name} />
-                                    )}
+                                                    notices={employeeNotices}
+                                                    onMarkNoticeSeen={handleMarkNoticeSeen}
+                                                    onApproveSanction={handleApproveSanction}
+                                                    onAddEvent={addCalendarEvent}
+                                                    budgetRequests={budgetRequests}
+                                                /> : <AccessDenied />
+                                        )}
 
-                                    {/* Global Notification System removed (was dead code here) */}
+                                        {/* HR & MANAGEMENT */}
+                                        {currentView === View.EMPLOYEES && (hasPermission('canViewHR') || hasPermission('canViewUsers') ? <EmployeeManagement employees={employees} setEmployees={setEmployees} sanctions={sanctions} customRoles={customRoles} /> : <AccessDenied />)}
+                                        {currentView === View.FILES && (hasPermission('canViewFiles') ? <EmployeeFiles employees={employees} setEmployees={setEmployees} sanctions={sanctions} absences={absences} tasks={tasks} setTasks={setTasks} checklistSnapshots={checklistSnapshots} notes={coordinatorNotes} setNotes={setCoordinatorNotes} currentUser={effectiveUser} users={users} /> : <AccessDenied />)}
+                                        {currentView === View.USERS && (hasPermission('canViewUsers') ? <UserManagement users={users} setUsers={setUsers} currentUser={effectiveUser} /> : <AccessDenied />)}
+                                        {currentView === View.SETTINGS && (hasPermission('canViewSettings') ? <SettingsView rolePermissions={rolePermissions} setRolePermissions={setRolePermissions} customRoles={customRoles} setCustomRoles={setCustomRoles} restrictLateralMessaging={restrictLateralMessaging} setRestrictLateralMessaging={setRestrictLateralMessaging} onExportBackup={handleExportBackup} /> : <AccessDenied />)}
 
-                                    {currentView === View.CASH_REGISTER && (
-                                        <CashRegister shifts={cashShifts} setShifts={setCashShifts} userName={currentMember.name} />
-                                    )}
-                                </>
-                            )}
+                                        {/* OPERATIONS & LOGS */}
+                                        {currentView === View.OVERTIME && (hasPermission('canViewOvertime') ? <OvertimeLog employees={employees} records={records} setRecords={setRecords} absences={absences} setAbsences={setAbsences} sanctions={sanctions} setSanctions={setSanctions} holidays={holidays} setHolidays={setHolidays} currentUserName={effectiveUser.name} currentUserId={effectiveUser.id} currentUserRole={effectiveUser.role} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} onAddEvent={addCalendarEvent} onDeleteEvent={deleteCalendarEvent} payrollMovements={payrollMovements} setPayrollMovements={setPayrollMovements} /> : <AccessDenied />)}
+                                        {currentView === View.SANCTIONS && (hasPermission('canViewSanctions') ? <SanctionsLog employees={employees} sanctions={sanctions} setSanctions={setSanctions} currentUser={effectiveUser} addEmployeeNotice={addEmployeeNotice} /> : <AccessDenied />)}
+                                        {currentView === View.NOTICES && (hasPermission('canViewCommunication') ? <EmployeeNotices currentUser={effectiveUser} notices={employeeNotices} setNotices={setEmployeeNotices} /> : <AccessDenied />)}
+
+                                        {/* FINANCE & PAYROLL */}
+                                        {currentView === View.PAYROLL && (hasPermission('canViewPayroll') ?
+                                            <PayrollManagement employees={employees} setEmployees={setEmployees} transactions={walletTransactions} setTransactions={setWalletTransactions} currentUser={effectiveUser} records={records} setRecords={setRecords} calendarEvents={calendarEvents} absences={absences} products={products || []} sanctions={sanctions} payrollMovements={payrollMovements} setPayrollMovements={setPayrollMovements} /> : <AccessDenied />
+                                        )}
+                                        {currentView === View.FINANCE && (hasPermission('canViewFinance') ?
+                                            <FinanceDashboard products={products} setTransactions={setWalletTransactions} transactions={walletTransactions} projections={projections} setProjections={setProjections} userName={effectiveUser.name} cashShifts={cashShifts} partners={partners} setPartners={setPartners} addRoyaltyHistory={addRoyaltyHistory} supplierProducts={supplierProducts} inventorySessions={inventorySessions} /> : <AccessDenied />
+                                        )}
+                                        {currentView === View.WALLET && (hasPermission('canViewWallet') ? <WalletView transactions={walletTransactions} setTransactions={setWalletTransactions} pendingDebt={pendingDebt} userName={effectiveUser.name} fixedExpenses={fixedExpenses} setFixedExpenses={setFixedExpenses} employees={employees} currentUser={effectiveUser} auditData={auditData} setAuditData={setAuditData} onOpenAssistant={() => { setIsChatVisible(true); setIsChatMinimized(false); }} /> : <AccessDenied />)}
+                                        {currentView === View.ROYALTIES && (hasPermission('canViewRoyalties') ? <RoyaltiesManagement partners={partners} setPartners={setPartners} royaltyPool={royaltyPool} setTransactions={setWalletTransactions} transactions={walletTransactions} userName={effectiveUser.name} royaltyHistory={royaltyHistory} addRoyaltyHistory={addRoyaltyHistory} /> : <AccessDenied />)}
+                                        {currentView === View.STATISTICS && (hasPermission('canViewFinance') ? <StatisticsDashboard cashShifts={cashShifts} walletTransactions={walletTransactions} /> : <AccessDenied />)}
+
+                                        {/* INVENTORY & SUPPLIERS */}
+                                        {currentView === View.INVENTORY && (hasPermission('canViewInventory') ? <InventoryManager items={supplierProducts} sessions={inventorySessions} setSessions={setInventorySessions} userName={effectiveUser.name} onUpdateProduct={supplierProductsHook.update} /> : <AccessDenied />)}
+                                        {currentView === View.SUPPLIERS && (hasPermission('canViewSuppliers') ? <SuppliersView suppliers={suppliers} addSupplier={suppliersHook.add} updateSupplier={suppliersHook.update} deleteSupplier={suppliersHook.remove} products={supplierProducts} addProduct={supplierProductsHook.add} updateProduct={supplierProductsHook.update} deleteProduct={supplierProductsHook.remove} shoppingLists={shoppingLists} setShoppingLists={setShoppingLists} userName={effectiveUser.name} /> : <AccessDenied />)}
+                                        {currentView === View.PRODUCTS && (hasPermission('canViewProducts') ? <ProductManagement products={products} setProducts={setProducts} /> : <AccessDenied />)}
+                                        {currentView === View.BUDGET_REQUESTS && (hasPermission('canViewBudgetRequests') ? <BudgetRequestsView currentUser={effectiveUser} users={users} requests={budgetRequests} walletTransactions={walletTransactions} cashShifts={cashShifts} /> : <AccessDenied />)}
+
+                                        {/* OFFICE & COMMS */}
+                                        {currentView === View.OFFICE && (hasPermission('canViewOffice') ?
+                                            <AdministrativeOffice currentUser={effectiveUser} users={users} tasks={adminTasks} setTasks={setAdminTasks} activityLogs={userActivityLogs} onComposeMessage={(userId) => { setComposeRecipient(userId); setView(View.INTERNAL_MAIL); }} calendarEvents={calendarEvents} onAddCalendarEvent={addCalendarEvent} onDeleteEvent={deleteCalendarEvent} records={records} cashShifts={cashShifts} absences={absences} holidays={holidays} employees={employees} inventorySessions={inventorySessions} internalMessages={internalMessages} sanctions={sanctions} employeeNotices={employeeNotices} checklistSnapshots={checklistSnapshots} budgetRequests={budgetRequests} officeNotes={officeNotes} onAddOfficeNote={addOfficeNote} onUpdateOfficeNote={updateOfficeNote} onRemoveOfficeNote={removeOfficeNote} documents={documents} setDocuments={setDocuments} /> : <AccessDenied />
+                                        )}
+                                        {currentView === View.INTERNAL_MAIL && (hasPermission('canViewCommunication') ? <InternalMail currentUser={effectiveUser} messages={internalMessages} setMessages={setInternalMessages} employees={employees} users={users} recipient={composeRecipient} /> : <AccessDenied />)}
+                                        {currentView === View.FORUM && (hasPermission('canViewForum') ? <ForumBoard posts={posts} setPosts={setPosts} currentUser={effectiveUser} currentMember={currentMember} /> : <AccessDenied />)}
+
+                                        {/* CASH REGISTER */}
+                                        {currentView === View.CASH_REGISTER && (hasPermission('canViewCash') ? <CashRegister shifts={cashShifts} setShifts={setCashShifts} userName={effectiveUser.name} transactions={walletTransactions} setTransactions={setWalletTransactions} /> : <AccessDenied />)}
+
+                                        {/* AI & OTHERS */}
+                                        {currentView === View.AI_REPORT && <AIReport employees={employees} records={records} sanctions={sanctions} />}
+                                        {currentView === View.AI_FOCUS && <ConstructionView title="Enfoque IA 2.0" description="Estamos entrenando modelos predictivos para anticipar la demanda de pedidos y optimizar turnos." />}
+
+                                        {/* MEMBER SPECIFIC VIEWS */}
+                                        {currentMember && (currentView === View.MEMBER_HOME || currentView === View.MEMBER_CALENDAR || currentView === View.MEMBER_TASKS || currentView === View.MEMBER_FILE || currentView === View.MEMBER_FORUM) && (
+                                            <MemberView
+                                                currentView={currentView}
+                                                member={currentMember}
+                                                records={records}
+                                                absences={absences}
+                                                sanctions={sanctions}
+                                                tasks={tasks}
+                                                setTasks={setTasks}
+                                                posts={posts}
+                                                setPosts={setPosts}
+                                                setView={setView}
+                                                checklistSnapshots={checklistSnapshots}
+                                                setChecklistSnapshots={setChecklistSnapshots}
+                                                holidays={holidays}
+                                                onUpdateSanction={handleUpdateSanction}
+                                                calendarEvents={calendarEvents}
+                                                rolePermissions={rolePermissions}
+                                                onAlert={handleSendNotice}
+                                                employees={employees}
+                                                notices={employeeNotices}
+                                                onMarkNoticeSeen={handleMarkNoticeSeen}
+                                                onApproveSanction={handleApproveSanction}
+                                                cashShifts={cashShifts}
+                                                inventory={inventorySessions}
+                                                transactions={walletTransactions}
+                                                messages={internalMessages}
+                                                payrollMovements={payrollMovements}
+                                            />
+                                        )}
+                                    </>
+                                );
+                            })()}
+
+
+                            {/* MEMBER VIEWS */}
+
 
 
                         </div>
@@ -1171,7 +1051,7 @@ const App: React.FC = () => {
                                     {(() => {
                                         const count = (
                                             employeeNotices.filter(n => !n.readBy.includes(currentUser.id) && !localReadIds.has(n.id)).length +
-                                            internalMessages.filter(m => !m.readBy.includes(currentUser.id) && !localReadIds.has(m.id)).length +
+                                            internalMessages.filter(m => m.recipientIds.includes(currentUser.id) && !m.readBy.includes(currentUser.id) && !localReadIds.has(m.id)).length +
                                             documents.filter(d => d.sharedWith?.includes(currentUser.id) && !d.readBy?.includes(currentUser.id) && !localReadIds.has(d.id)).length
                                         );
                                         return count > 0 && (

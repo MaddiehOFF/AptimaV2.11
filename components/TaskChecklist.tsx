@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Task, ChecklistSnapshot } from '../types';
 import { CheckCircle2, Circle, ClipboardList, Plus, Trash2, Clock, X, Check, ChevronDown, ChevronUp, AlertCircle, Archive, UserCheck } from 'lucide-react';
 import { playSound } from '../utils/soundUtils';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface TaskChecklistProps {
     tasks: Task[];
@@ -19,6 +20,22 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
     const [manualTime, setManualTime] = useState('');
     const [expandedTask, setExpandedTask] = useState<string | null>(null);
     const [editingDesc, setEditingDesc] = useState<{ id: string, text: string } | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onConfirm: () => { },
+    });
 
     const myTasks = tasks.filter(t => t.employeeId === employeeId);
     const completedCount = myTasks.filter(t => t.status === 'COMPLETED').length;
@@ -90,10 +107,17 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
     };
 
     const deleteTask = (taskId: string) => {
-        if (window.confirm("¿Borrar tarea?")) {
-            setTasks(tasks.filter(t => t.id !== taskId));
-            playSound('CLICK');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Borrar tarea?',
+            message: 'Eliminar esta tarea de la lista.',
+            type: 'danger',
+            confirmText: 'SÍ, BORRAR',
+            onConfirm: () => {
+                setTasks(tasks.filter(t => t.id !== taskId));
+                playSound('CLICK');
+            }
+        });
     };
 
     const saveDetails = (taskId: string) => {
@@ -112,23 +136,30 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
             return;
         }
 
-        if (window.confirm("¿Finalizar y Archivar Check-list de hoy? Se guardará en el expediente y se limpiará el tablero.")) {
-            const snapshot: ChecklistSnapshot = {
-                id: generateUUID(),
-                date: new Date().toISOString(),
-                finalizedAt: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-                finalizedBy: userName || 'Sistema',
-                employeeId: employeeId,
-                tasks: myTasks
-            };
+        setConfirmModal({
+            isOpen: true,
+            title: '¿FINALIZAR CHECK-LIST?',
+            message: 'Se guardará en el expediente y se limpiará el tablero para mañana.',
+            type: 'warning',
+            confirmText: 'FINALIZAR',
+            onConfirm: () => {
+                const snapshot: ChecklistSnapshot = {
+                    id: generateUUID(),
+                    date: new Date().toISOString(),
+                    finalizedAt: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+                    finalizedBy: userName || 'Sistema',
+                    employeeId: employeeId,
+                    tasks: myTasks
+                };
 
-            onFinalize(snapshot);
+                onFinalize(snapshot);
 
-            // Clean tasks for this employee from the global list
-            setTasks(prevTasks => prevTasks.filter(t => t.employeeId !== employeeId));
+                // Clean tasks for this employee from the global list
+                setTasks(prevTasks => prevTasks.filter(t => t.employeeId !== employeeId));
 
-            playSound('SUCCESS');
-        }
+                playSound('SUCCESS');
+            }
+        });
     };
 
     return (
@@ -346,6 +377,18 @@ export const TaskChecklist: React.FC<TaskChecklistProps> = ({ tasks, setTasks, e
                     </div>
                 </div>
             )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+            />
         </div>
     );
 };

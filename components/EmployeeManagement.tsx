@@ -5,6 +5,7 @@ import { Plus, Trash2, User as UserIcon, Briefcase, DollarSign, X, Clock, Camera
 import { exportToExcel, exportToPDF, exportCredentialsPDF } from '../utils/exportUtils';
 import { playSound } from '../utils/soundUtils';
 import { supabase } from '../supabaseClient';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface EmployeeManagementProps {
   employees: Employee[];
@@ -179,6 +180,22 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employee
   const [showArchived, setShowArchived] = useState(false);
   const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
 
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    onConfirm: () => { },
+  });
+
   const initialFormState: Partial<Employee> = {
     name: '',
     position: 'Personal',
@@ -321,101 +338,100 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employee
   const handleResetData = async () => {
     if (!editingId) return;
 
-    // Double Confirmation
-    if (!window.confirm("⚠️ ATENCIÓN: ESTA ACCIÓN ES IRREVERSIBLE ⚠️\n\n¿Estás SEGURO de que quieres borrar ABSOLUTAMENTE TODO el historial de este empleado?\n\n- Se borrarán todas las asistencias.\n- Se borrarán todos los pagos y movimientos.\n- Se borrarán las sanciones.\n- El saldo volverá a $0.\n\nSolo quedará su contrato y datos personales.")) {
-      return;
-    }
+    // Double Confirmation via Modal
+    setConfirmModal({
+      isOpen: true,
+      title: '⚠️ ¿REINICIAR DATOS?',
+      message: '¿Estás SEGURO? Se borrará TODO el historial (asistencias, pagos, sanciones). El saldo volverá a $0. Esta acción es IRREVERSIBLE.',
+      type: 'danger',
+      confirmText: 'SÍ, BORRAR TODO',
+      onConfirm: async () => {
+        try {
+          playSound('CLICK');
 
-    // Triple Confirmation (Input name?) - Simplified for now as per request.
+          // 1. Delete Attendance (Table 'records' uses JSONB 'data' column)
+          // Since it's JSONB, we can't use .eq('employeeId', ...), we must filter the JSON.
+          const { error: attError } = await supabase
+            .from('records')
+            .delete()
+            .filter('data->>employeeId', 'eq', editingId);
+          if (attError) throw attError;
 
-    try {
-      playSound('CLICK'); // Assuming playSound is defined elsewhere
+          // 2. Delete Absences (Table 'absences' uses JSONB 'data' column)
+          const { error: absError } = await supabase
+            .from('absences')
+            .delete()
+            .filter('data->>employeeId', 'eq', editingId);
+          if (absError) throw absError;
 
-      // 1. Delete Attendance (Table 'records' uses JSONB 'data' column)
-      // Since it's JSONB, we can't use .eq('employeeId', ...), we must filter the JSON.
-      const { error: attError } = await supabase
-        .from('records')
-        .delete()
-        .filter('data->>employeeId', 'eq', editingId);
-      if (attError) throw attError;
+          // 3. Delete Payroll Movements (Table 'payroll_movements' is STRUCTURED with columns)
+          const { error: payError } = await supabase
+            .from('payroll_movements')
+            .delete()
+            .eq('employee_id', editingId); // Correct Snake Case Column
+          if (payError) throw payError;
 
-      // 2. Delete Absences (Table 'absences' uses JSONB 'data' column)
-      const { error: absError } = await supabase
-        .from('absences')
-        .delete()
-        .filter('data->>employeeId', 'eq', editingId);
-      if (absError) throw absError;
+          // 4. Delete Sanctions (Table 'sanctions' uses JSONB 'data' column)
+          const { error: sancError } = await supabase
+            .from('sanctions')
+            .delete()
+            .filter('data->>employeeId', 'eq', editingId);
+          if (sancError) throw sancError;
 
-      // 3. Delete Payroll Movements (Table 'payroll_movements' is STRUCTURED with columns)
-      const { error: payError } = await supabase
-        .from('payroll_movements')
-        .delete()
-        .eq('employee_id', editingId); // Correct Snake Case Column
-      if (payError) throw payError;
+          // 5. Reset Employee Stats (Table 'employees' uses JSONB 'data' column)
+          // We must Read -> Modify -> Write to preserve other fields in 'data'
 
-      // 4. Delete Sanctions (Table 'sanctions' uses JSONB 'data' column)
-      const { error: sancError } = await supabase
-        .from('sanctions')
-        .delete()
-        .filter('data->>employeeId', 'eq', editingId);
-      if (sancError) throw sancError;
+          // A. Fetch current data
+          const { data: currentEmpRow, error: fetchError } = await supabase
+            .from('employees')
+            .select('data')
+            .eq('id', editingId)
+            .single();
 
-      // 5. Reset Employee Stats (Table 'employees' uses JSONB 'data' column)
-      // We must Read -> Modify -> Write to preserve other fields in 'data'
+          if (fetchError) throw fetchError;
 
-      // A. Fetch current data
-      const { data: currentEmpRow, error: fetchError } = await supabase
-        .from('employees')
-        .select('data')
-        .eq('id', editingId)
-        .single();
+          // B. Prepare new data
+          const updatedEmpData = {
+            ...currentEmpRow.data,
+            balance: 0,
+            payroll_start_date: null // Reset cycle
+          };
 
-      if (fetchError) throw fetchError;
+          // C. Update the row
+          const { error: empError } = await supabase
+            .from('employees')
+            .update({
+              data: updatedEmpData
+            })
+            .eq('id', editingId);
 
-      // B. Prepare new data
-      const updatedEmpData = {
-        ...currentEmpRow.data,
-        balance: 0,
-        payroll_start_date: null // Reset cycle
-      };
+          if (empError) throw empError;
 
-      // C. Update the row
-      const { error: empError } = await supabase
-        .from('employees')
-        .update({
-          data: updatedEmpData
-        })
-        .eq('id', editingId);
+          // 5. Update Local State
+          setEmployees(prev => prev.map(emp => {
+            if (emp.id === editingId) {
+              return { ...emp, balance: 0, payrollStartDate: undefined };
+            }
+            return emp;
+          }));
 
-      if (empError) throw empError;
+          playSound('SUCCESS');
+          alert("✅ Datos reiniciados correctamente. El empleado está limpio de historial.");
+          setIsModalOpen(false);
 
-      // 5. Update Local State
-      setEmployees(prev => prev.map(emp => {
-        if (emp.id === editingId) {
-          return { ...emp, balance: 0, payrollStartDate: undefined };
+        } catch (error) {
+          console.error('Error resetting data:', error);
+          playSound('ERROR');
+          alert("Error al reiniciar datos. Revisa la consola.");
         }
-        return emp;
-      }));
-
-      playSound('SUCCESS'); // Assuming playSound is defined elsewhere
-      alert("✅ Datos reiniciados correctamente. El empleado está limpio de historial.");
-      setIsModalOpen(false);
-
-    } catch (error) {
-      console.error('Error resetting data:', error);
-      playSound('ERROR'); // Assuming playSound is defined elsewhere
-      alert("Error al reiniciar datos. Revisa la consola.");
-    }
+      }
+    });
   };
 
   const handleDeletePermanently = async () => {
     if (!employeeToDelete) return;
 
-    // Double Confirmation
-    if (!window.confirm("⚠️ ¿Estás SEGURO de que quieres ELIMINAR DEFINITIVAMENTE a este empleado del sistema?\n\nEsta acción NO se puede deshacer. Se perderán TODOS los registros históricos (asistencias, pagos, sanciones) asociados a este empleado para evitar errores en la base de datos.")) {
-      return;
-    }
-
+    // Double Confirmation removed as the custom modal already validates this
     const empId = employeeToDelete.id;
 
     try {
@@ -796,6 +812,18 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employee
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type={confirmModal.type}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+      />
 
       {/* Edit/Create Modal */}
       {isModalOpen && (

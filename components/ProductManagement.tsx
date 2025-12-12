@@ -5,6 +5,7 @@ import { parseProductsExcel } from '../utils/excelParser';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface ProductManagementProps {
     products: Product[];
@@ -46,6 +47,18 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isImporting, setIsImporting] = useState(false);
     const [activeTab, setActiveTab] = useState<'costs' | 'ingredients'>('costs');
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     // Dynamic Columns State
     const [ingredientColumns, setIngredientColumns] = useState<string[]>(() => {
@@ -109,10 +122,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
     };
 
     const handleRemoveColumn = (col: string) => {
-        if (!confirm(`¿Eliminar columna "${col}"? Los datos asociados no se borrarán de los productos pero dejarán de verse.`)) return;
-        const updated = ingredientColumns.filter(c => c !== col);
-        setIngredientColumns(updated);
-        localStorage.setItem('sushiblack_ingredient_columns', JSON.stringify(updated));
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Columna?',
+            message: `¿Eliminar columna "${col}"? Los datos asociados no se borrarán de los productos pero dejarán de verse.`,
+            onConfirm: () => {
+                const updated = ingredientColumns.filter(c => c !== col);
+                setIngredientColumns(updated);
+                localStorage.setItem('sushiblack_ingredient_columns', JSON.stringify(updated));
+            }
+        });
     };
 
     const initialForm = {
@@ -159,11 +178,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
 
     const handleBulkDelete = () => {
         if (selectedIds.length === 0) return;
-        if (!confirm(`¿Estás seguro de eliminar ${selectedIds.length} productos? Esta acción no se puede deshacer.`)) return;
-
-        setProducts(prev => prev.filter(p => !selectedIds.includes(p.id)));
-        setSelectedIds([]);
-        alert('Productos eliminados correctamente.');
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Productos?',
+            message: `¿Estás seguro de eliminar ${selectedIds.length} productos? Esta acción no se puede deshacer.`,
+            onConfirm: () => {
+                setProducts(prev => prev.filter(p => !selectedIds.includes(p.id)));
+                setSelectedIds([]);
+                alert('Productos eliminados correctamente.');
+            }
+        });
     };
 
     // --- IMPORT LOGIC ---
@@ -173,86 +197,98 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
 
         // Determine if importing products or ingredients based on active tab
         if (activeTab === 'costs') {
-            if (!confirm('¿Seguro que deseas importar estos productos? Se agregarán al catálogo existente.')) return;
-            setIsImporting(true);
-            try {
-                const importedProducts = await parseProductsExcel(file);
-                if (importedProducts.length === 0) {
-                    alert('No se encontraron productos válidos.');
-                    return;
+            setConfirmModal({
+                isOpen: true,
+                title: '¿Importar Productos?',
+                message: '¿Seguro que deseas importar estos productos? Se agregarán al catálogo existente.',
+                onConfirm: async () => {
+                    setIsImporting(true);
+                    try {
+                        const importedProducts = await parseProductsExcel(file);
+                        if (importedProducts.length === 0) {
+                            alert('No se encontraron productos válidos.');
+                            return;
+                        }
+                        setProducts(prev => [...prev, ...importedProducts]);
+                        alert(`¡Éxito! Se importaron ${importedProducts.length} productos.`);
+                    } catch (error) {
+                        console.error(error);
+                        alert('Error al importar productos.');
+                    } finally {
+                        setIsImporting(false);
+                        if (e.target) e.target.value = '';
+                    }
                 }
-                setProducts(prev => [...prev, ...importedProducts]);
-                alert(`¡Éxito! Se importaron ${importedProducts.length} productos.`);
-            } catch (error) {
-                console.error(error);
-                alert('Error al importar productos.');
-            } finally {
-                setIsImporting(false);
-                e.target.value = '';
-            }
+            });
         } else {
             // Import Ingredients
-            if (!confirm('¿Seguro que deseas importar los ingredientes? Esto actualizará los valores de los productos coincidentes por NOMBRE.')) return;
-            setIsImporting(true);
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                try {
-                    const bstr = evt.target?.result;
-                    const wb = XLSX.read(bstr, { type: 'binary' });
-                    const wsname = wb.SheetNames[0];
-                    const ws = wb.Sheets[wsname];
-                    const data = XLSX.utils.sheet_to_json(ws); // Array of objects
+            setConfirmModal({
+                isOpen: true,
+                title: '¿Importar Ingredientes?',
+                message: '¿Seguro que deseas importar los ingredientes? Esto actualizará los valores de los productos coincidentes por NOMBRE.',
+                onConfirm: () => {
+                    setIsImporting(true);
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        try {
+                            const bstr = evt.target?.result;
+                            const wb = XLSX.read(bstr, { type: 'binary' });
+                            const wsname = wb.SheetNames[0];
+                            const ws = wb.Sheets[wsname];
+                            const data = XLSX.utils.sheet_to_json(ws); // Array of objects
 
-                    let updatedCount = 0;
+                            let updatedCount = 0;
 
-                    // Logic: Match Row 'Producto vendido' -> Product.name
-                    // Update Product.ingredients with the rest of the columns
-                    setProducts(prevProducts => {
-                        const newProducts = [...prevProducts]; // shallow copy array
+                            // Logic: Match Row 'Producto vendido' -> Product.name
+                            // Update Product.ingredients with the rest of the columns
+                            setProducts(prevProducts => {
+                                const newProducts = [...prevProducts]; // shallow copy array
 
-                        data.forEach((row: any) => {
-                            // Try to find the product name column. User said "Producto vendido" or similar.
-                            // We'll look for standard keys or loosely match.
-                            const productName = row['Producto vendido'] || row['producto'] || row['Producto'];
+                                data.forEach((row: any) => {
+                                    // Try to find the product name column. User said "Producto vendido" or similar.
+                                    // We'll look for standard keys or loosely match.
+                                    const productName = row['Producto vendido'] || row['producto'] || row['Producto'];
 
-                            if (productName) {
-                                const prodIndex = newProducts.findIndex(p => p.name.toLowerCase().trim() === String(productName).toLowerCase().trim());
+                                    if (productName) {
+                                        const prodIndex = newProducts.findIndex(p => p.name.toLowerCase().trim() === String(productName).toLowerCase().trim());
 
-                                if (prodIndex !== -1) {
-                                    // Found specific product. Update its ingredients.
-                                    const ingredients: Record<string, number> = {};
+                                        if (prodIndex !== -1) {
+                                            // Found specific product. Update its ingredients.
+                                            const ingredients: Record<string, number> = {};
 
-                                    // Iterate known columns
-                                    ingredientColumns.forEach(col => {
-                                        if (row[col] !== undefined) {
-                                            ingredients[col] = parseFloat(row[col]) || 0;
+                                            // Iterate known columns
+                                            ingredientColumns.forEach(col => {
+                                                if (row[col] !== undefined) {
+                                                    ingredients[col] = parseFloat(row[col]) || 0;
+                                                }
+                                            });
+
+                                            newProducts[prodIndex] = {
+                                                ...newProducts[prodIndex],
+                                                ingredients: {
+                                                    ...(newProducts[prodIndex].ingredients || {}),
+                                                    ...ingredients
+                                                }
+                                            };
+                                            updatedCount++;
                                         }
-                                    });
+                                    }
+                                });
+                                return newProducts;
+                            });
+                            alert(`¡Éxito! Se actualizaron ingredientes para ${updatedCount} productos.`);
 
-                                    newProducts[prodIndex] = {
-                                        ...newProducts[prodIndex],
-                                        ingredients: {
-                                            ...(newProducts[prodIndex].ingredients || {}),
-                                            ...ingredients
-                                        }
-                                    };
-                                    updatedCount++;
-                                }
-                            }
-                        });
-                        return newProducts;
-                    });
-                    alert(`¡Éxito! Se actualizaron ingredientes para ${updatedCount} productos.`);
-
-                } catch (err) {
-                    console.error("Error parsing ingredients excel", err);
-                    alert("Error al procesar el archivo de ingredientes.");
-                } finally {
-                    setIsImporting(false);
-                    e.target.value = '';
+                        } catch (err) {
+                            console.error("Error parsing ingredients excel", err);
+                            alert("Error al procesar el archivo de ingredientes.");
+                        } finally {
+                            setIsImporting(false);
+                            if (e.target) e.target.value = '';
+                        }
+                    };
+                    reader.readAsBinaryString(file);
                 }
-            };
-            reader.readAsBinaryString(file);
+            });
         }
     };
 
@@ -356,9 +392,14 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
     };
 
     const handleDelete = (id: string) => {
-        if (window.confirm('¿Seguro que deseas eliminar este producto del catálogo? Esta acción afectará tanto a la vista de Costos como a la de Ingredientes.')) {
-            setProducts(prev => prev.filter(p => p.id !== id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Producto?',
+            message: '¿Seguro que deseas eliminar este producto del catálogo? Esta acción afectará tanto a la vista de Costos como a la de Ingredientes.',
+            onConfirm: () => {
+                setProducts(prev => prev.filter(p => p.id !== id));
+            }
+        });
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -774,6 +815,16 @@ export const ProductManagement: React.FC<ProductManagementProps> = ({ products =
                     </div>
                 </div>
             )}
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="CONFIRMAR"
+            />
         </div>
     );
 };

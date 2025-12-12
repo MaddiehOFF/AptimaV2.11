@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Employee, SanctionRecord, SanctionType, User } from '../types';
 import { AlertTriangle, Gavel, Trash2, FileWarning, DollarSign, FolderOpen, ScrollText, Calendar, UserCheck, ArchiveRestore, Ban } from 'lucide-react';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface SanctionsLogProps {
   employees: Employee[];
@@ -22,6 +23,18 @@ export const SanctionsLog: React.FC<SanctionsLogProps> = ({ employees, sanctions
   const [amount, setAmount] = useState<number>(0);
   const [fileEmployeeId, setFileEmployeeId] = useState<string | null>(null);
   const [dischargeText, setDischargeText] = useState('');
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+  });
 
   // Filter out deleted sanctions for stats calculations
   const activeSanctions = sanctions.filter(s => !s.deletedAt);
@@ -79,13 +92,18 @@ export const SanctionsLog: React.FC<SanctionsLogProps> = ({ employees, sanctions
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('¿Borrar esta sanción? Se mantendrá un registro visual pero no contará para estadísticas.')) {
-      setSanctions(sanctions.map(s =>
-        s.id === id
-          ? { ...s, deletedAt: new Date().toISOString(), deletedBy: currentUser?.name || 'Admin' }
-          : s
-      ));
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: '¿Borrar Sanción?',
+      message: '¿Borrar esta sanción? Se mantendrá un registro visual pero no contará para estadísticas.',
+      onConfirm: () => {
+        setSanctions(sanctions.map(s =>
+          s.id === id
+            ? { ...s, deletedAt: new Date().toISOString(), deletedBy: currentUser?.name || 'Admin' }
+            : s
+        ));
+      }
+    });
   };
 
   const getSanctionColor = (t: SanctionType, isDeleted: boolean = false) => {
@@ -445,6 +463,16 @@ export const SanctionsLog: React.FC<SanctionsLogProps> = ({ employees, sanctions
           </div>
         </div>
       </div>
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        type="danger"
+        confirmText="BORRAR"
+      />
     </div>
   );
 };

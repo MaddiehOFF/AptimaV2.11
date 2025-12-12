@@ -5,13 +5,13 @@ import { Employee, InventoryItem, InventorySession, OvertimeRecord, SanctionReco
 // Note: Process.env.API_KEY is expected to be present.
 // Note: Process.env.API_KEY is expected to be present.
 // @ts-ignore
-const apiKey = import.meta.env.VITE_API_KEY;
+const apiKey = import.meta.env.VITE_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
 let ai: GoogleGenAI | null = null;
 
 if (apiKey) {
     ai = new GoogleGenAI({ apiKey });
 } else {
-    console.warn("VITE_API_KEY is missing. AI features will be disabled.");
+    console.warn("API KEY MISSING. Please set VITE_API_KEY or GEMINI_API_KEY in .env");
 }
 
 
@@ -383,5 +383,125 @@ export const generateDocumentStructure = async (
     } catch (error) {
         console.error("AI Coach Error:", error);
         return "Error al conectar con el Asistente de Escritura.";
+    }
+};
+
+export const chatWithFinancialAdvisor = async (
+    userMessage: string,
+    history: { role: 'user' | 'assistant', content: string }[],
+    context: {
+        balance: number;
+        expenses: FixedExpense[];
+        transactions: WalletTransaction[];
+        pendingDebt: number;
+        userName: string;
+        partners: any[]; // Avoid circular strict typing for now or import Partner
+        royaltyPool: number;
+        royaltyHistory: any[];
+        auditData: any[]; // Conteo data
+    }
+): Promise<string> => {
+
+    // 1. Summarize Context for System Prompt
+    const recentTrans = context.transactions
+        .slice(0, 5)
+        .map(t => `${t.date.split('T')[0]}: ${t.type} $${t.amount} (${t.category}) - ${t.description}`)
+        .join('\n');
+
+    const nextExpenses = context.expenses
+        .filter(e => !e.isPaid)
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 3)
+        .map(e => `${e.dueDate}: $${e.amount} (${e.name})`)
+        .join('\n');
+
+    // Royalties Context
+    const partnersInfo = context.partners.map(p => `${p.name}: ${p.sharePercentage}%`).join(', ');
+    const poolInfo = `$${context.royaltyPool}`;
+    const recentRoyaltyPayments = context.royaltyHistory
+        .filter(h => h.type === 'PAYMENT')
+        .slice(0, 3)
+        .map(h => `${h.date}: Pagado $${h.amount} a ${h.user}`)
+        .join('\n');
+
+    // Conteo (Audit) Context
+    const auditInfo = context.auditData && context.auditData.length > 0
+        ? context.auditData.map(a => `- ${a.name}: $${a.amount}`).join('\n')
+        : "No hay información de conteo físico (Conteo) disponible.";
+
+
+    const systemPrompt = `
+    Eres "Fran", un experto financiero amigable y profesional para la empresa.
+    
+    CONTEXTO FINANCIERO ACTUAL:
+    - Saldo en Caja Global: $${context.balance}
+    - Deuda Pendiente (Pasivo Corriente): $${context.pendingDebt}
+    - Próximos Gastos a Pagar: 
+    ${nextExpenses || "Ninguno próximo"}
+    - Últimos 5 Movimientos:
+    ${recentTrans || "Sin movimientos recientes"}
+    - Usuario: ${context.userName}
+
+    DISTRIBUCIÓN FÍSICA DE DINERO (CONTEO):
+    ${auditInfo}
+
+    CONTEXTO DE SOCIOS Y REGALÍAS:
+    - Socios y Porcentajes: ${partnersInfo || "No disponible"}
+    - Pozo de Regalías Acumulado: ${poolInfo}
+    - Pagos de Regalías Recientes:
+    ${recentRoyaltyPayments || "Sin pagos recientes"}
+
+    TUS OBJETIVOS:
+    1. Saluda al usuario por su nombre (${context.userName}) si es el inicio de la conversación.
+    2. Responder preguntas sobre el estado financiero con precisión.
+    3. Dar consejos breves y accionables para mejorar el flujo de caja.
+    4. Analizar tendencias si se te pide.
+    5. Tener MEMORIA de la conversación previa (historial adjunto).
+    6. RESPONDER SIEMPRE EN ESPAÑOL.
+    
+    ESTILO:
+    - Conciso, directo, pero amable.
+    - Usa emojis ocasionalmente (📈, 💰, ✅) para ser visual.
+    - NO des respuestas largas a menos que sea un análisis profundo solicitado.
+    - Si detectas un gasto peligroso o saldo bajo, avisa con tacto.
+
+    IMPORTANTE:
+    - Si te preguntan algo que no está en el contexto, di que no tienes esa información pero puedes dar un consejo general.
+    `;
+
+    // 2. Build Chat History
+
+    if (!ai) return "Error: No se detectó API KEY. Configura VITE_API_KEY en tu .env";
+
+    try {
+        const contents = [
+            {
+                role: "user",
+                parts: [{ text: systemPrompt + "\n\n(Sistema: Configuración inicial del asistente. Espera la primera pregunta del usuario.)" }]
+            },
+            {
+                role: "model",
+                parts: [{ text: "Entendido. Soy Fran, listo para ayudar con las finanzas. ¿En qué puedo asistirte hoy?" }]
+            },
+            ...history.map(msg => ({
+                role: msg.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: msg.content }]
+            })),
+            {
+                role: "user",
+                parts: [{ text: userMessage }]
+            }
+        ];
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contents as any,
+        });
+
+        return response.text || "Lo siento, no pude generar una respuesta.";
+
+    } catch (error) {
+        console.error("Chat Error:", error);
+        return "Lo siento, tuve un problema de conexión. ¿Podrías intentar de nuevo?";
     }
 };

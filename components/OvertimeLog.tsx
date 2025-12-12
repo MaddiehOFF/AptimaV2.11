@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { calculateAttendanceAmount } from '../services/attendanceCalculator';
 import { AbsenceRecord, Employee, OvertimeRecord, SanctionRecord, CalendarEvent, PayrollMovement } from '../types';
 import { AlignLeft, Save, Trash2, ChevronLeft, ChevronRight, Clock, Info, CheckCircle2, Circle, XCircle, CalendarX, Check, Filter, Wallet, AlertOctagon, CalendarPlus, Sparkles, Calendar as CalIcon } from 'lucide-react';
-import { usePayrollMovements } from '../hooks/usePayrollMovements'; // Added Hook
+import { usePayrollMovements } from '../hooks/usePayrollMovements';
+import { SecurityConfirmationModal } from './SecurityConfirmationModal';
 interface OvertimeLogProps {
     employees: Employee[];
     records: OvertimeRecord[];
@@ -37,7 +38,24 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
     const [isHolidayMode, setIsHolidayMode] = useState(false);
     const [isResetModalOpen, setIsResetModalOpen] = useState(false);
     const [resetOptions, setResetOptions] = useState({ events: false, attendance: false, holidays: false, reminders: false });
-    const [isCalcExpanded, setIsCalcExpanded] = useState(false); // 38.1 Collapsible Detail State
+    const [isCalcExpanded, setIsCalcExpanded] = useState(false);
+
+    // CONFIRMATION MODAL STATE
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string; // Optional custom text
+        cancelText?: string; // Optional custom text
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'danger',
+        onConfirm: () => { }
+    });
 
     // Event State
     const [eventTitle, setEventTitle] = useState('');
@@ -47,6 +65,7 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
     const [actualCheckIn, setActualCheckIn] = useState('');
     const [actualCheckOut, setActualCheckOut] = useState('');
     const [reason, setReason] = useState('');
+    const [manualAmount, setManualAmount] = useState<number | null>(null); // New Manual Amount State
 
     // Absence State
     const [absenceReason, setAbsenceReason] = useState('');
@@ -164,6 +183,11 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
             fullResult: result
         };
     }, [selectedEmpId, actualCheckIn, actualCheckOut, employees, date, holidays]);
+
+    // Effect: Reset manual amount when calculation parameters change
+    useEffect(() => {
+        setManualAmount(null);
+    }, [selectedEmpId, actualCheckIn, actualCheckOut, date]);
 
     // Financial Summary for Selected Employee in Current Month
     const employeeMonthSummary = useMemo(() => {
@@ -286,12 +310,14 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                 checkIn: actualCheckIn,
                 checkOut: actualCheckOut,
                 overtimeHours: parseFloat(calc.overtimeHours),
-                overtimeAmount: calc.amount, // Derived from strict service
+                overtimeAmount: manualAmount !== null ? manualAmount : calc.amount, // Use manual or calculated
                 reason: reason || (calc.isOvertime ? 'Horas Extras' : 'Turno Regular'),
                 paid: false,
                 isHoliday: calc.isHoliday,
                 createdBy: currentUserName,
-                status: isFuture ? 'SCHEDULED' : 'CONFIRMED'
+                status: isFuture ? 'SCHEDULED' : 'CONFIRMED',
+                manuallyModifiedBy: manualAmount !== null && manualAmount !== calc.amount ? currentUserName : undefined,
+                originalAmount: manualAmount !== null && manualAmount !== calc.amount ? calc.amount : undefined
             };
 
             if (isFuture) {
@@ -328,7 +354,7 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                     employee_id: selectedEmpId,
                     attendance_id: newRecord.id, // Link to Attendance
                     type: 'ASISTENCIA',
-                    amount: calc.amount, // Explicit Daily Value
+                    amount: manualAmount !== null ? manualAmount : calc.amount, // Explicit Daily Value (Manual or Calc)
                     date: date,
                     description: `Jornada trabajada ${parseLocalDate(date).toLocaleDateString()} (${actualCheckIn} - ${actualCheckOut})`,
                     created_by: currentUserName,
@@ -344,6 +370,7 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
             setReason('');
             setActualCheckIn('');
             setActualCheckOut('');
+            setManualAmount(null); // Reset manual amount
             alert("Asistencia registrada correctamente.");
         } else {
             // Absence Mode, defaulting to 'ABSENCE' as 'FRANCO' is handled earlier
@@ -373,32 +400,53 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
     };
 
     const handleDeleteEvent = (id: string) => {
-        if (window.confirm('¿Eliminar registro?')) {
-            if (onDeleteEvent) {
-                onDeleteEvent(id);
-            } else if (setCalendarEvents) {
-                setCalendarEvents(prev => prev.filter(e => e.id !== id));
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar evento?',
+            message: 'Esta acción eliminará el evento del calendario.',
+            type: 'warning',
+            onConfirm: () => {
+                if (onDeleteEvent) {
+                    onDeleteEvent(id);
+                } else if (setCalendarEvents) {
+                    setCalendarEvents(prev => prev.filter(e => e.id !== id));
+                }
             }
-        }
+        });
     };
 
     const handleDeleteRecord = (id: string) => {
-        if (window.confirm('¿Eliminar registro?')) {
-            const recordToDelete = records.find(r => r.id === id);
-            setRecords(records.filter(r => r.id !== id));
+        const recordToDelete = records.find(r => r.id === id);
+        if (!recordToDelete) return;
 
-            // [INTEGRATION] Delete Payroll Movement
-            if (recordToDelete && setPayrollMovements) {
-                deleteMovementByAttendanceId(id);
-                console.log("[PAYROLL] Movement deleted for attendance:", id);
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Registro?',
+            message: `Esta acción eliminará la asistencia del empleado y anulará cualquier movimiento de nómina asociado.`,
+            type: 'danger',
+            onConfirm: () => {
+                // 1. Update Local State (Optimistic)
+                const newRecords = records.filter(r => r.id !== id);
+                setRecords(newRecords);
+
+                // 2. Trigger Integration (Payroll)
+                if (setPayrollMovements) {
+                    deleteMovementByAttendanceId(id);
+                }
             }
-        }
+        });
     };
 
     const handleDeleteAbsence = (id: string) => {
-        if (window.confirm('¿Eliminar falta?')) {
-            setAbsences(absences.filter(a => a.id !== id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar falta?',
+            message: 'Se eliminará el registro de ausencia.',
+            type: 'warning',
+            onConfirm: () => {
+                setAbsences(absences.filter(a => a.id !== id));
+            }
+        });
     };
 
 
@@ -451,7 +499,7 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
     };
 
     const getDayRecords = (d: string) => {
-        return records.filter(r => r.date === d && (!filterEmpId || r.employeeId === filterEmpId));
+        return records.filter(r => r.date.startsWith(d) && (!filterEmpId || r.employeeId === filterEmpId));
     };
 
     const getDayAbsences = (d: string) => {
@@ -464,36 +512,43 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
     };
 
     const handleResetCalendar = () => {
-        if (!window.confirm('¿ESTÁS SEGURO? Esta acción es irreversible.')) return;
+        setConfirmModal({
+            isOpen: true,
+            title: '¿REINICIAR CALENDARIO?',
+            message: '¿ESTÁS SEGURO? Esta acción es irreversible. Se borrarán los datos seleccionados.',
+            type: 'danger',
+            confirmText: 'Sí, Reiniciar',
+            onConfirm: () => {
+                let deletedCount = 0;
 
-        let deletedCount = 0;
+                // 1. Delete Events (Regular & Holidays)
+                if (resetOptions.events || resetOptions.holidays || resetOptions.reminders) {
+                    // Filter out events that match the selected types to be deleted
+                    const typesToDelete = [];
+                    if (resetOptions.events) typesToDelete.push('EVENT');
+                    if (resetOptions.holidays) typesToDelete.push('HOLIDAY', 'CLOSED', 'DESCANSO');
+                    // Reminders are basically events in this system currently, unless we distinguish them
+                    // Assuming 'EVENT' covers Reminders for now as per current create logic
 
-        // 1. Delete Events (Regular & Holidays)
-        if (resetOptions.events || resetOptions.holidays || resetOptions.reminders) {
-            // Filter out events that match the selected types to be deleted
-            const typesToDelete = [];
-            if (resetOptions.events) typesToDelete.push('EVENT');
-            if (resetOptions.holidays) typesToDelete.push('HOLIDAY', 'CLOSED', 'DESCANSO');
-            // Reminders are basically events in this system currently, unless we distinguish them
-            // Assuming 'EVENT' covers Reminders for now as per current create logic
+                    if (setCalendarEvents) {
+                        setCalendarEvents(prev => prev.filter(e => !typesToDelete.includes(e.type || 'EVENT')));
+                        deletedCount++;
+                    }
+                }
 
-            if (setCalendarEvents) {
-                setCalendarEvents(prev => prev.filter(e => !typesToDelete.includes(e.type || 'EVENT')));
-                deletedCount++;
+                // 2. Delete Attendance (Records)
+                if (resetOptions.attendance) {
+                    setRecords([]);
+                    setAbsences([]); // Usually part of attendance history
+                    setSanctions([]); // Usually part of attendance history
+                    deletedCount++;
+                }
+
+                setIsResetModalOpen(false);
+                setResetOptions({ events: false, attendance: false, holidays: false, reminders: false });
+                alert('Calendario reiniciado según las opciones seleccionadas.');
             }
-        }
-
-        // 2. Delete Attendance (Records)
-        if (resetOptions.attendance) {
-            setRecords([]);
-            setAbsences([]); // Usually part of attendance history
-            setSanctions([]); // Usually part of attendance history
-            deletedCount++;
-        }
-
-        setIsResetModalOpen(false);
-        setResetOptions({ events: false, attendance: false, holidays: false, reminders: false });
-        alert('Calendario reiniciado según las opciones seleccionadas.');
+        });
     };
 
     return (
@@ -546,19 +601,25 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                         {mode === 'FRANCO' && (
                             <button
                                 onClick={() => {
-                                    if (window.confirm(`¿Asignar "Día de Descanso" a TODOS los empleados activos (${employees.filter(e => e.active).length}) para el día ${parseLocalDate(date).toLocaleDateString()}?`)) {
-                                        const activeEmps = employees.filter(e => e.active);
-                                        const newAbsences = activeEmps.map(emp => ({
-                                            id: generateUUID(),
-                                            employeeId: emp.id,
-                                            date: date,
-                                            reason: 'Día de Descanso General',
-                                            justified: true,
-                                            type: 'FRANCO' as const
-                                        }));
-                                        setAbsences(prev => [...newAbsences, ...prev]);
-                                        alert('Descanso General asignado correctamente.');
-                                    }
+                                    setConfirmModal({
+                                        isOpen: true,
+                                        title: '¿Asignar Descanso a Todos?',
+                                        message: `¿Asignar "Día de Descanso" a TODOS los empleados activos (${employees.filter(e => e.active).length}) para el día ${parseLocalDate(date).toLocaleDateString()}?`,
+                                        type: 'info',
+                                        onConfirm: () => {
+                                            const activeEmps = employees.filter(e => e.active);
+                                            const newAbsences = activeEmps.map(emp => ({
+                                                id: generateUUID(),
+                                                employeeId: emp.id,
+                                                date: date,
+                                                reason: 'Día de Descanso General',
+                                                justified: true,
+                                                type: 'FRANCO' as const
+                                            }));
+                                            setAbsences(prev => [...newAbsences, ...prev]);
+                                            alert('Descanso General asignado correctamente.');
+                                        }
+                                    });
                                 }}
                                 className="px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 hover:bg-blue-200"
                                 title="Asignar Descanso a Todos"
@@ -796,6 +857,11 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                                                     </div>
                                                     <p className="text-xs text-gray-500 dark:text-sushi-muted">
                                                         Entrada: {rec.checkIn} | Salida: {rec.checkOut} | Por: {rec.createdBy || 'Sistema'}
+                                                        {rec.manuallyModifiedBy && (
+                                                            <span className="block text-blue-500 font-bold mt-0.5" title={`Valor original: ${formatMoney(rec.originalAmount || 0)}`}>
+                                                                * Modificado manualmente por {rec.manuallyModifiedBy}
+                                                            </span>
+                                                        )}
                                                     </p>
                                                 </div>
                                             </div>
@@ -815,7 +881,14 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                                                 </div>
                                                 <div className="flex gap-2">
 
-                                                    <button onClick={() => handleDeleteRecord(rec.id)} className="text-gray-400 dark:text-sushi-muted hover:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            console.log("Delete button clicked for:", rec.id);
+                                                            handleDeleteRecord(rec.id);
+                                                        }}
+                                                        className="text-gray-400 dark:text-sushi-muted hover:text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+                                                    >
                                                         <Trash2 className="w-5 h-5" />
                                                     </button>
                                                 </div>
@@ -1001,7 +1074,22 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
 
                                                     <div className="flex justify-between items-end border-t border-gray-300 dark:border-white/10 pt-2 mt-1">
                                                         <span className="text-yellow-700 dark:text-sushi-gold font-bold uppercase text-xs">Monto Final Asistencia</span>
-                                                        <span className="text-yellow-700 dark:text-sushi-gold font-bold text-xl">{formatMoney(calculationPreview.amount)}</span>
+                                                        <div className="text-right">
+                                                            {/* Manual Edit Input */}
+                                                            <div className="flex items-center gap-2 justify-end">
+                                                                <span className="text-xs text-gray-400">Modificar:</span>
+                                                                <input
+                                                                    type="number"
+                                                                    value={manualAmount !== null ? manualAmount : calculationPreview.amount}
+                                                                    onChange={(e) => setManualAmount(Number(e.target.value))}
+                                                                    className="w-24 text-right bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded px-1 py-0.5 text-sm font-bold text-gray-900 dark:text-white"
+                                                                />
+                                                            </div>
+                                                            {manualAmount !== null && manualAmount !== calculationPreview.amount && (
+                                                                <p className="text-[10px] text-blue-500 font-bold mt-0.5">* Editado Manualmente</p>
+                                                            )}
+                                                            {/* <span className="text-yellow-700 dark:text-sushi-gold font-bold text-xl">{formatMoney(calculationPreview.amount)}</span> */}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}
@@ -1242,6 +1330,16 @@ export const OvertimeLog: React.FC<OvertimeLogProps> = ({ employees, records, se
                     </div>
                 </div>
             )}
+            {/* Confirmation Modal */}
+            {/* Security Confirmation Modal */}
+            <SecurityConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                description={confirmModal.message}
+                actionType={confirmModal.type as any} // Cast to ensure compatibility if types differ slightly
+            />
         </div>
     );
 };

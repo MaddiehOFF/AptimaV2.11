@@ -89,6 +89,15 @@ export interface AdminTask {
   completedBy?: string; // User ID who marked as done
   verifiedBy?: string;  // User ID who verified
   verifiedAt?: string;
+
+  // Collaboration
+  comments?: {
+    id: string;
+    userId: string;
+    text: string;
+    date: string;
+  }[];
+  tags?: string[];
 }
 
 export interface ForumPost {
@@ -114,6 +123,8 @@ export interface OvertimeRecord {
   isHoliday?: boolean; // If paid double
   createdBy?: string;
   status?: 'CONFIRMED' | 'SCHEDULED'; // New field for future attendance
+  manuallyModifiedBy?: string; // Audit for manual amount changes
+  originalAmount?: number; // Audit for original calculated amount
 }
 
 export interface AbsenceRecord {
@@ -316,6 +327,7 @@ export interface CashShift {
   ordersPedidosYa?: number;
 
   transactions: CashTransaction[];
+  salesDataSnapshot?: any[]; // Snapshot of imported XLS
 }
 
 export interface CashTransaction {
@@ -509,7 +521,22 @@ export type PermissionKey =
   | 'canViewProfile' // Detailed profile, file
   | 'canViewCalendar'
   | 'canViewForum'
-  | 'canViewCommunication'; // Mail, Notices
+  | 'canViewCommunication' // Mail, Notices
+  | 'canViewSuppliers'
+  | 'canViewBudgetRequests'
+  | 'canViewDashboard'
+  | 'canViewHR'
+  | 'canViewFiles'
+  | 'canViewOvertime' // Control Hs
+  | 'canViewPayroll' // Sueldos
+  | 'canViewSanctions'
+  | 'canViewUsers' // System Users (Admin/Manager)
+  | 'canViewSettings'
+  | 'canViewOffice' // oficina administrativa
+  | 'canViewProducts' // Products management
+  | 'canViewFinance' // Finance Dashboard (was generic)
+  | 'canViewWallet' // Billetera
+  | 'canViewRoyalties';
 
 export interface RolePermissions {
   [role: string]: PermissionKey[];
@@ -556,10 +583,12 @@ export interface SupplierProduct {
   brand?: string;
   unit: string; // kg, lt, un, caja, paq
   price: number;
+  photoUrl?: string; // Product Image
   previousPrice?: number; // New field for price comparison
   lastPriceUpdate: string;
   category?: string;
   minQuantity?: number; // for stock alerts (future)
+  currentStock?: number; // Current persistent stock level
   updatedAt: string;
   createdBy?: string; // Audit
   updatedBy?: string; // Audit
@@ -680,4 +709,13 @@ export interface PayrollMovement {
   created_at?: string;
   status?: 'ACTIVE' | 'ANULADO'; // Soft delete
   meta?: any; // Stores officialMinutes, workedMinutes, tax, holidays, etc.
+}
+
+// AI CONVERSATION
+export interface WalletChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  date: string; // ISO String
+  meta?: any; // Context used for that logical step
 }

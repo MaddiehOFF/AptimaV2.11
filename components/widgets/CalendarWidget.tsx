@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalIcon, MapPin, Clock, X, Info 
 import { CalendarEvent, OvertimeRecord, CashShift, AbsenceRecord, Employee } from '../../types';
 import { calculateAttendanceAmount, AttendanceCalcInput } from '../../services/attendanceCalculator';
 import { generateUUID } from '../../utils/uuid';
+import { ConfirmationModal } from '../common/ConfirmationModal';
 
 interface CalendarWidgetProps {
     events: CalendarEvent[];
@@ -14,15 +15,28 @@ interface CalendarWidgetProps {
     employees?: Employee[];
     onDayClick?: (date: string) => void;
     onAddEvent?: (event: CalendarEvent) => void;
+    onDeleteEvent?: (id: string) => void;
 }
 
-export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], records = [], cashShifts = [], absences = [], daysOff = [], holidays = [], employees = [], onDayClick, onAddEvent }) => {
+export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], records = [], cashShifts = [], absences = [], daysOff = [], holidays = [], employees = [], onDayClick, onAddEvent, onDeleteEvent }) => {
     const [currentDate, setCurrentDate] = useState(() => {
         const d = new Date();
         d.setHours(0, 0, 0, 0);
         return d;
     });
-    const [selectedDateDetails, setSelectedDateDetails] = useState<{ date: Date, events: CalendarEvent[], records: OvertimeRecord[], absences: AbsenceRecord[], daysOff: AbsenceRecord[], isHoliday: boolean } | null>(null);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     // Generate week days (Mon-Sun) based on currentDate
     const weekDays = useMemo(() => {
@@ -83,8 +97,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], rec
     };
 
     const handleDayClick = (date: Date) => {
-        const data = getDayData(date);
-        setSelectedDateDetails({ date, events: data.dayEvents, records: data.dayRecords, absences: data.dayAbsences, daysOff: data.dayDaysOff, isHoliday: data.isHoliday });
+        setSelectedDate(date);
         if (onDayClick) onDayClick(date.toISOString().split('T')[0]);
     };
 
@@ -105,6 +118,16 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], rec
         visibility: 'PRIVATE' // Default to PRIVATE
     });
     const [eventDate, setEventDate] = useState(new Date().toISOString().split('T')[0]);
+
+    const data = selectedDate ? getDayData(selectedDate) : null;
+    const selectedDateDetails = data ? {
+        date: selectedDate!,
+        events: data.dayEvents,
+        records: data.dayRecords,
+        absences: data.dayAbsences,
+        daysOff: data.dayDaysOff,
+        isHoliday: data.isHoliday
+    } : null;
 
     return (
         <div className="bg-white dark:bg-sushi-dark rounded-xl border border-gray-200 dark:border-white/5 shadow-sm h-full flex flex-col overflow-hidden relative">
@@ -266,7 +289,7 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], rec
                                 )}
                             </div>
                             <button
-                                onClick={(e) => { e.stopPropagation(); setSelectedDateDetails(null); }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedDate(null); }}
                                 className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors"
                             >
                                 <X className="w-5 h-5 text-gray-500" />
@@ -282,12 +305,32 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], rec
                                 {selectedDateDetails.events.length > 0 ? (
                                     <div className="space-y-2">
                                         {selectedDateDetails.events.map(e => (
-                                            <div key={e.id} className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
-                                                <div className="flex justify-between">
-                                                    <p className="font-bold text-blue-900 dark:text-blue-100 text-sm">{e.title}</p>
-                                                    {e.type && <span className="text-[10px] font-bold px-1 rounded bg-white/50">{e.type}</span>}
+                                            <div key={e.id} className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 flex items-center justify-between group">
+                                                <div>
+                                                    <div className="flex justify-between">
+                                                        <p className="font-bold text-blue-900 dark:text-blue-100 text-sm">{e.title}</p>
+                                                        {e.type && <span className="text-[10px] font-bold px-1 rounded bg-white/50">{e.type}</span>}
+                                                    </div>
+                                                    {e.description && <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">{e.description}</p>}
                                                 </div>
-                                                {e.description && <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">{e.description}</p>}
+                                                {/* Delete Button */}
+                                                {(e.userId === undefined || e.userId === null || (employees && employees.some(emp => emp.id === e.userId)) || true) && onDeleteEvent && ( // permissive check for now or specific permission logic
+                                                    <button
+                                                        onClick={(ev) => {
+                                                            ev.stopPropagation();
+                                                            setConfirmModal({
+                                                                isOpen: true,
+                                                                title: '¿Eliminar evento?',
+                                                                message: 'Esta acción no se puede deshacer.',
+                                                                onConfirm: () => onDeleteEvent(e.id)
+                                                            });
+                                                        }}
+                                                        className="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-100 dark:hover:bg-red-500/20 rounded"
+                                                        title="Eliminar evento"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -522,6 +565,16 @@ export const CalendarWidget: React.FC<CalendarWidgetProps> = ({ events = [], rec
                     </div>
                 )
             }
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="ELIMINAR"
+            />
         </div>
     );
 };

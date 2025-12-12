@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Employee, FixedExpense, WalletTransaction, PaymentMethod, BudgetAnalysis, FixedExpenseCategory, User } from '../types';
-import { Wallet, TrendingUp, TrendingDown, Clock, Check, Plus, Minus, Search, Sparkles, RefreshCcw, Calendar, Trash2, Banknote, CreditCard, AlertTriangle, Paperclip, Camera, Image as ImageIcon, X, PieChart as PieChartIcon, Zap, ThumbsUp, ThumbsDown, Bell, Ban, ArrowRight, Activity, Shield, Download, Building } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Clock, Check, Plus, Minus, Search, Sparkles, RefreshCcw, Calendar, Trash2, Banknote, CreditCard, AlertTriangle, Paperclip, Camera, Image as ImageIcon, X, PieChart as PieChartIcon, Zap, ThumbsUp, ThumbsDown, Bell, Ban, ArrowRight, Activity, Shield, Download, Building, Bot, Filter, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, GripVertical, FileText } from 'lucide-react';
 import { generateBudgetAnalysis } from '../services/geminiService';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { playSound } from '../utils/soundUtils';
+import { SecurityConfirmationModal } from './SecurityConfirmationModal';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface WalletViewProps {
     transactions: WalletTransaction[];
@@ -15,10 +17,15 @@ interface WalletViewProps {
     setFixedExpenses?: React.Dispatch<React.SetStateAction<FixedExpense[]>>;
     employees?: Employee[]; // For AI Budgeting
     currentUser?: User | null;
+    onOpenAssistant?: () => void;
+    auditData?: { id: string, name: string, amount: number }[];
+    setAuditData?: React.Dispatch<React.SetStateAction<{ id: string, name: string, amount: number }[]>>;
 }
 
-export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTransactions, pendingDebt, userName, fixedExpenses = [], setFixedExpenses, employees = [], currentUser }) => {
+export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTransactions, pendingDebt, userName, fixedExpenses = [], setFixedExpenses, employees = [], currentUser, onOpenAssistant, auditData = [], setAuditData }) => {
     const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'FIXED' | 'SIMULATOR' | 'AUDIT'>('MOVEMENTS');
+
+    // ... (rest of the file until the button location)
 
     const generateUUID = () => {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -44,20 +51,42 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
     const [isScheduled, setIsScheduled] = useState(false);
     const [scheduledDate, setScheduledDate] = useState('');
 
-    // Fixed Expenses State
+    // Modals & Fixed Expenses State
     const [showFixedModal, setShowFixedModal] = useState(false);
-    const [newExpenseName, setNewExpenseName] = useState('');
-    const [newExpenseAmount, setNewExpenseAmount] = useState('');
-    const [newExpenseDate, setNewExpenseDate] = useState('');
+    const [payExpenseModal, setPayExpenseModal] = useState<FixedExpense | null>(null);
+    const [securityModalOpen, setSecurityModalOpen] = useState(false);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [newExpenseMethod, setNewExpenseMethod] = useState<PaymentMethod>('TRANSFERENCIA');
     const [newExpenseCategory, setNewExpenseCategory] = useState<FixedExpenseCategory>('OTROS');
     const [newExpenseCbu, setNewExpenseCbu] = useState('');
     const [newExpenseAlias, setNewExpenseAlias] = useState('');
     const [newExpenseBank, setNewExpenseBank] = useState('');
 
+    // Fixed Expenses State
+    const [newExpenseName, setNewExpenseName] = useState('');
+    const [newExpenseAmount, setNewExpenseAmount] = useState('');
+    const [newExpenseDate, setNewExpenseDate] = useState('');
+
     // Fixed Expense Payment State
-    const [payExpenseModal, setPayExpenseModal] = useState<FixedExpense | null>(null);
     const [partialPayAmount, setPartialPayAmount] = useState<number>(0);
+    const [expenseFilter, setExpenseFilter] = useState<'ALL' | 'PENDING' | 'PAID' | 'OVERDUE'>('PENDING');
+    const [sortOrder, setSortOrder] = useState<'DATE_ASC' | 'DATE_DESC' | 'AMOUNT_ASC' | 'AMOUNT_DESC'>('DATE_ASC');
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onConfirm: () => { },
+    });
 
     // Simulator State
     const [simName, setSimName] = useState('');
@@ -68,22 +97,8 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
     const [aiBudget, setAiBudget] = useState<BudgetAnalysis | null>(null);
     const [loadingBudget, setLoadingBudget] = useState(false);
 
-    // Image View State
-    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    // AI Chat State
 
-    // Funds Audit State (Conteo) V2
-    const [auditData, setAuditData] = useState<{ id: string, name: string, amount: number }[]>([]);
-
-    useEffect(() => {
-        const saved = localStorage.getItem('wallet_audit_data_v2');
-        if (saved) {
-            try {
-                setAuditData(JSON.parse(saved));
-            } catch (e) {
-                setAuditData([]);
-            }
-        }
-    }, []);
 
     const totalBalance = useMemo(() => {
         return transactions.filter(t => !t.deletedAt && t.status !== 'SCHEDULED').reduce((acc, curr) => {
@@ -208,12 +223,18 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
             return;
         }
 
-        if (window.confirm('¿Anular este movimiento? Quedará registrado como tachado.')) {
-            setTransactions(prev => prev.map(t =>
-                t.id === id ? { ...t, deletedAt: new Date().toISOString(), deletedBy: userName } : t
-            ));
-            playSound('CLICK');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Anular movimiento?',
+            message: 'El movimiento quedará registrado como tachado (anulado) en el historial.',
+            type: 'warning',
+            onConfirm: () => {
+                setTransactions(prev => prev.map(t =>
+                    t.id === id ? { ...t, deletedAt: new Date().toISOString(), deletedBy: userName } : t
+                ));
+                playSound('CLICK');
+            }
+        });
     };
 
     const handleAddFixedExpense = (e: React.FormEvent) => {
@@ -276,16 +297,23 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                 lastPaidDate: isFullyPaid ? new Date().toISOString() : undefined
             } : e
         ));
-
+        setSecurityModalOpen(false); // Close security modal
         setPayExpenseModal(null);
+        setPartialPayAmount(0);
         playSound('SUCCESS');
     };
 
     const handleDeleteFixedExpense = (id: string) => {
-        if (window.confirm("¿Eliminar este gasto fijo?")) {
-            setFixedExpenses && setFixedExpenses(fixedExpenses.filter(e => e.id !== id));
-            playSound('CLICK');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Gasto Fijo?',
+            message: 'Se eliminará de la lista de gastos recurrentes.',
+            type: 'danger',
+            onConfirm: () => {
+                setFixedExpenses && setFixedExpenses(fixedExpenses.filter(e => e.id !== id));
+                playSound('CLICK');
+            }
+        });
     };
 
     const handleGenerateBudget = async () => {
@@ -437,6 +465,13 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                             >
                                 <Plus className="w-5 h-5" /> Registrar Movimiento
                             </button>
+                            <button
+                                onClick={() => { onOpenAssistant?.(); playSound('CLICK'); }}
+                                className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2"
+                            >
+                                <Bot className="w-5 h-5" /> Asistente Financiero
+                            </button>
+
                         </div>
 
                         {/* CFO VIRTUAL */}
@@ -585,76 +620,213 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
 
             {/* FIXED EXPENSES TAB */}
             {activeTab === 'FIXED' && (
-                <div className="space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h3 className="font-bold text-gray-900 dark:text-white">Gastos Recurrentes (Mensuales)</h3>
+                <div className="space-y-6 animate-fade-in">
+                    {/* Header Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 dark:text-sushi-muted text-xs font-bold uppercase mb-1">Total Pendiente (Deuda)</p>
+                                <h3 className="text-3xl font-mono font-bold text-gray-900 dark:text-white">
+                                    {formatMoney(fixedExpenses?.reduce((acc, curr) => acc + (curr.amount - (curr.paidAmount || 0)), 0) || 0)}
+                                </h3>
+                            </div>
+                            <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600">
+                                <TrendingDown className="w-6 h-6" />
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 dark:text-sushi-muted text-xs font-bold uppercase mb-1">Pagos Vencidos</p>
+                                <h3 className="text-3xl font-mono font-bold text-red-500">
+                                    {fixedExpenses?.filter(e => !e.isPaid && new Date(e.dueDate + 'T12:00:00') < new Date()).length || 0}
+                                </h3>
+                            </div>
+                            <div className="p-3 rounded-full bg-orange-100 dark:bg-orange-900/20 text-orange-600">
+                                <AlertTriangle className="w-6 h-6" />
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-sushi-dark border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-gray-500 dark:text-sushi-muted text-xs font-bold uppercase mb-1">Pagado Acumulado</p>
+                                <h3 className="text-3xl font-mono font-bold text-green-600">
+                                    {formatMoney(fixedExpenses?.reduce((acc, curr) => acc + (curr.paidAmount || 0), 0) || 0)}
+                                </h3>
+                            </div>
+                            <div className="p-3 rounded-full bg-green-100 dark:bg-green-900/20 text-green-600">
+                                <CheckCircle2 className="w-6 h-6" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Toolbar */}
+                    <div className="flex flex-col xl:flex-row justify-between items-center gap-4 bg-gray-50 dark:bg-white/5 p-2 rounded-xl">
+                        <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
+                            {/* Filter Group */}
+                            <div className="flex items-center gap-1 bg-white dark:bg-black/20 p-1 rounded-lg border border-gray-200 dark:border-white/5 w-full md:w-auto overflow-x-auto">
+                                <button
+                                    onClick={() => setExpenseFilter('PENDING')}
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-colors whitespace-nowrap flex-1 md:flex-none ${expenseFilter === 'PENDING' ? 'bg-sushi-gold text-sushi-black shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                                >
+                                    Pendientes
+                                </button>
+                                <button
+                                    onClick={() => setExpenseFilter('OVERDUE')}
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-colors whitespace-nowrap flex-1 md:flex-none ${expenseFilter === 'OVERDUE' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                                >
+                                    Vencidos
+                                </button>
+                                <button
+                                    onClick={() => setExpenseFilter('PAID')}
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-colors whitespace-nowrap flex-1 md:flex-none ${expenseFilter === 'PAID' ? 'bg-green-500 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                                >
+                                    Pagados
+                                </button>
+                                <button
+                                    onClick={() => setExpenseFilter('ALL')}
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-colors whitespace-nowrap flex-1 md:flex-none ${expenseFilter === 'ALL' ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'}`}
+                                >
+                                    Todos
+                                </button>
+                            </div>
+
+                            {/* Sort Group */}
+                            <div className="flex items-center gap-2 bg-white dark:bg-black/20 px-3 py-1 rounded-lg border border-gray-200 dark:border-white/5 w-full md:w-auto">
+                                <span className="text-xs text-gray-400 font-bold uppercase mr-2 whitespace-nowrap flex items-center gap-1"><Filter className="w-3 h-3" /> Ordenar:</span>
+                                <select
+                                    value={sortOrder}
+                                    onChange={(e) => setSortOrder(e.target.value as any)}
+                                    className="bg-transparent text-xs font-bold text-gray-700 dark:text-white outline-none w-full md:w-auto"
+                                >
+                                    <option value="DATE_ASC" className="text-black">Vencimiento (Próximo)</option>
+                                    <option value="DATE_DESC" className="text-black">Vencimiento (Lejano)</option>
+                                    <option value="AMOUNT_DESC" className="text-black">Mayor Importe</option>
+                                    <option value="AMOUNT_ASC" className="text-black">Menor Importe</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <button
                             onClick={() => setShowFixedModal(true)}
-                            className="bg-sushi-gold text-sushi-black px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors hover:bg-sushi-goldhover"
+                            className="w-full xl:w-auto bg-sushi-gold text-sushi-black px-6 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors hover:bg-sushi-goldhover shadow-sm whitespace-nowrap"
                         >
-                            <Plus className="w-4 h-4" /> Agregar Nuevo
+                            <Plus className="w-5 h-5" /> Registrar Cuenta/Pago
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {fixedExpenses?.length === 0 && <p className="text-gray-400 italic text-sm col-span-full text-center py-8">No hay gastos fijos configurados.</p>}
+                    {/* Expense List */}
+                    <div className="space-y-3">
+                        {fixedExpenses?.length === 0 && (
+                            <div className="text-center py-12 bg-gray-50 dark:bg-white/5 rounded-xl border border-dashed border-gray-300 dark:border-white/10">
+                                <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                <p className="text-gray-500 dark:text-sushi-muted font-medium">No hay gastos registrados.</p>
+                                <button onClick={() => setShowFixedModal(true)} className="text-sushi-gold text-sm font-bold mt-2 hover:underline">Registrar el primero</button>
+                            </div>
+                        )}
 
-                        {fixedExpenses?.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).map(exp => {
-                            const paidPercent = Math.min(100, (exp.paidAmount || 0) / exp.amount * 100);
-                            const due = new Date(exp.dueDate);
-                            const isOverdue = !exp.isPaid && due < new Date();
-                            const isNear = !exp.isPaid && !isOverdue && (due.getTime() - new Date().getTime()) < (3 * 24 * 60 * 60 * 1000);
+                        {fixedExpenses
+                            ?.filter(exp => {
+                                const due = new Date(exp.dueDate + 'T12:00:00');
+                                const today = new Date();
+                                if (expenseFilter === 'ALL') return true;
+                                if (expenseFilter === 'PAID') return exp.isPaid;
+                                if (expenseFilter === 'PENDING') return !exp.isPaid;
+                                if (expenseFilter === 'OVERDUE') return !exp.isPaid && due < today;
+                                return true;
+                            })
+                            .sort((a, b) => {
+                                if (sortOrder === 'DATE_ASC') return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+                                if (sortOrder === 'DATE_DESC') return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+                                if (sortOrder === 'AMOUNT_ASC') return a.amount - b.amount;
+                                if (sortOrder === 'AMOUNT_DESC') return b.amount - a.amount;
+                                return 0;
+                            })
+                            .map(exp => {
+                                const paidPercent = Math.min(100, (exp.paidAmount || 0) / exp.amount * 100);
+                                // FIX: Append T12:00:00 to force mid-day time and avoid timezone shifting to previous day
+                                const due = new Date(exp.dueDate + 'T12:00:00');
+                                const today = new Date();
 
-                            return (
-                                <div key={exp.id} className={`bg-white dark:bg-sushi-dark border rounded-xl p-5 shadow-sm relative group overflow-hidden ${isOverdue ? 'border-red-500/50' : isNear ? 'border-orange-500/50' : 'border-gray-200 dark:border-white/5'}`}>
-                                    {exp.isPaid && <div className="absolute top-0 right-0 p-16 bg-green-500/10 rounded-full blur-2xl -mr-8 -mt-8"></div>}
+                                const isOverdue = !exp.isPaid && due < today;
+                                const isNear = !exp.isPaid && !isOverdue && (due.getTime() - today.getTime()) < (3 * 24 * 60 * 60 * 1000);
+                                const remaining = exp.amount - (exp.paidAmount || 0);
 
-                                    <div className="flex justify-between items-start mb-3 relative z-10">
-                                        <div>
-                                            <h4 className="font-bold text-gray-900 dark:text-white">{exp.name}</h4>
-                                            <p className="text-xs text-gray-500 dark:text-sushi-muted uppercase">{exp.category || 'Otros'}</p>
-                                        </div>
-                                        <div className="flex flex-col items-end">
-                                            <span className="font-mono font-bold text-gray-900 dark:text-white">{formatMoney(exp.amount)}</span>
-                                            {exp.isPaid ? (
-                                                <span className="text-[10px] text-green-500 font-bold flex items-center gap-1"><Check className="w-3 h-3" /> PAGADO</span>
-                                            ) : (
-                                                <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : isNear ? 'text-orange-500' : 'text-gray-400'}`}>
-                                                    Vence: {new Date(exp.dueDate).toLocaleDateString()}
-                                                </span>
-                                            )}
+                                return (
+                                    <div key={exp.id} className={`bg-white dark:bg-sushi-dark border p-4 rounded-xl shadow-sm transition-all hover:shadow-md relative overflow-hidden group ${isOverdue ? 'border-l-4 border-l-red-500 border-gray-200 dark:border-white/5' : exp.isPaid ? 'border-l-4 border-l-green-500 border-gray-200 dark:border-white/5' : 'border-l-4 border-l-sushi-gold border-gray-200 dark:border-white/5'}`}>
+                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10">
+                                            {/* Date Info */}
+                                            <div className="flex items-center gap-4 min-w-[150px]">
+                                                <div className={`flex flex-col items-center justify-center w-14 h-14 rounded-lg font-bold border ${isOverdue ? 'bg-red-50 dark:bg-red-900/20 border-red-200 text-red-600' : exp.isPaid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 text-green-600' : 'bg-gray-100 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-700 dark:text-white'}`}>
+                                                    <span className="text-xs uppercase">{due.toLocaleDateString('es-AR', { month: 'short' })}</span>
+                                                    <span className="text-xl">{due.getDate()}</span>
+                                                </div>
+                                                <div>
+                                                    <h4 className={`font-bold text-lg ${exp.isPaid ? 'text-gray-500 line-through decoration-2 decoration-gray-300' : 'text-gray-900 dark:text-white'}`}>{exp.name}</h4>
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-sushi-muted">
+                                                        <span className="bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">{exp.category}</span>
+                                                        <span>• {exp.paymentMethod}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Financial Status */}
+                                            <div className="flex-1 w-full md:w-auto md:text-center md:px-8">
+                                                <div className="flex justify-between items-end mb-1">
+                                                    <span className="text-xs text-gray-400">Progreso de Pago</span>
+                                                    <span className="text-xs font-bold text-gray-900 dark:text-white">{paidPercent.toFixed(0)}%</span>
+                                                </div>
+                                                <div className="w-full h-2 bg-gray-100 dark:bg-black/30 rounded-full overflow-hidden">
+                                                    <div className={`h-full transition-all duration-500 ${exp.isPaid ? 'bg-green-500' : isOverdue ? 'bg-red-500' : 'bg-sushi-gold'}`} style={{ width: `${paidPercent}%` }}></div>
+                                                </div>
+                                                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                                                    <span>Pagado: {formatMoney(exp.paidAmount || 0)}</span>
+                                                    <span className="font-bold text-gray-900 dark:text-white">Total: {formatMoney(exp.amount)}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Actions & Status */}
+                                            <div className="flex items-center justify-between w-full md:w-auto gap-4">
+                                                <div className="text-right min-w-[100px]">
+                                                    {exp.isPaid ? (
+                                                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs font-bold">
+                                                            <CheckCircle2 className="w-3 h-3" /> COMPLETADO
+                                                        </span>
+                                                    ) : (
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-xs text-gray-400">Resta Pagar</span>
+                                                            <span className={`font-mono text-xl font-bold ${isOverdue ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}>
+                                                                {formatMoney(remaining)}
+                                                            </span>
+                                                            {isOverdue && <span className="text-[10px] text-red-500 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> VENCIDO</span>}
+                                                            {isNear && <span className="text-[10px] text-orange-500 font-bold flex items-center gap-1"><Clock className="w-3 h-3" /> VENCE PRONTO</span>}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center gap-2 border-l border-gray-100 dark:border-white/10 pl-4 md:pl-4">
+                                                    {!exp.isPaid && (
+                                                        <button
+                                                            onClick={() => openPayFixedModal(exp)}
+                                                            className="bg-sushi-gold hover:bg-sushi-goldhover text-sushi-black p-2 rounded-lg transition-colors shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-sushi-gold"
+                                                            title="Registrar Pago"
+                                                        >
+                                                            <Banknote className="w-5 h-5" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleDeleteFixedExpense(exp.id)}
+                                                        className="p-2 text-gray-300 hover:text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                                                        title="Eliminar"
+                                                    >
+                                                        <Trash2 className="w-5 h-5" />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-
-                                    {/* Progress Bar */}
-                                    <div className="w-full bg-gray-100 dark:bg-black/30 h-2 rounded-full mb-2 overflow-hidden">
-                                        <div className={`h-full transition-all ${exp.isPaid ? 'bg-green-500' : 'bg-sushi-gold'}`} style={{ width: `${paidPercent}%` }}></div>
-                                    </div>
-                                    <div className="flex justify-between text-[10px] text-gray-400 mb-4">
-                                        <span>Pagado: {formatMoney(exp.paidAmount || 0)}</span>
-                                        <span>Resta: {formatMoney(exp.amount - (exp.paidAmount || 0))}</span>
-                                    </div>
-
-                                    <div className="flex justify-between items-center relative z-10">
-                                        <div className="text-[10px] text-gray-500 dark:text-sushi-muted">
-                                            {exp.paymentMethod === 'TRANSFERENCIA' ? <CreditCard className="w-3 h-3 inline mr-1" /> : <Banknote className="w-3 h-3 inline mr-1" />}
-                                            {exp.paymentMethod}
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => handleDeleteFixedExpense(exp.id)} className="text-gray-300 hover:text-red-500 p-1"><Trash2 className="w-4 h-4" /></button>
-                                            {!exp.isPaid && (
-                                                <button
-                                                    onClick={() => openPayFixedModal(exp)}
-                                                    className="bg-sushi-gold text-sushi-black px-3 py-1 rounded text-xs font-bold hover:bg-sushi-goldhover shadow-sm"
-                                                >
-                                                    Pagar
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )
-                        })}
+                                );
+                            })}
                     </div>
                 </div>
             )}
@@ -731,6 +903,8 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                     )}
                 </div>
             )}
+
+
 
             {/* Transaction Modal */}
             {showModal && (
@@ -1134,7 +1308,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                                 Cancelar
                             </button>
                             <button
-                                onClick={confirmPayFixedExpense}
+                                onClick={() => setSecurityModalOpen(true)}
                                 disabled={partialPayAmount <= 0}
                                 className="flex-1 bg-sushi-gold text-sushi-black font-bold py-3 rounded-lg hover:bg-sushi-goldhover shadow-lg shadow-sushi-gold/20 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -1144,6 +1318,27 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                     </div>
                 </div>
             )}
+            <SecurityConfirmationModal
+                isOpen={securityModalOpen}
+                onClose={() => setSecurityModalOpen(false)}
+                onConfirm={confirmPayFixedExpense}
+                title="¿Confirmar Pago Gasto Fijo?"
+                description={`Vas a registrar un pago de ${formatMoney(partialPayAmount)} para "${payExpenseModal?.name || ''}".`}
+                actionType="warning"
+                confirmText="Pagar Gasto"
+            />
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+            />
         </div>
     );
 };

@@ -1,17 +1,19 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Box, Plus, Calendar, Save, History, Search, ArrowRight, CheckCircle2, AlertTriangle, FileText, ChevronDown, ChevronUp, ChevronRight, Clock, Filter, X, Camera, ScanLine, Loader2, Trash2 } from 'lucide-react';
+import { Box, Plus, Calendar, Save, History, Search, ArrowRight, CheckCircle2, AlertTriangle, FileText, ChevronDown, ChevronUp, ChevronRight, Clock, Filter, X, Camera, ScanLine, Loader2, Trash2, Lock } from 'lucide-react';
 import { InventorySession, SupplierProduct } from '../types';
 import { playSound } from '../utils/soundUtils';
 import { exportToPDF } from '../utils/exportUtils';
+import { SecurityConfirmationModal } from './SecurityConfirmationModal';
 
 interface InventoryManagerProps {
     items: SupplierProduct[];
     sessions: InventorySession[];
     setSessions: React.Dispatch<React.SetStateAction<InventorySession[]>>;
     userName: string;
+    onUpdateProduct: (item: SupplierProduct) => Promise<void>;
 }
 
-export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessions, setSessions, userName }) => {
+export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessions, setSessions, userName, onUpdateProduct }) => {
     // Session State
     const [activeSession, setActiveSession] = useState<InventorySession | null>(() => {
         return sessions.find(s => s.status === 'OPEN') || null;
@@ -24,7 +26,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
     const [counts, setCounts] = useState<Record<string, { initial: number; final?: number; consumption?: number }>>({});
 
     // View State
-    const [viewMode, setViewMode] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+    const [viewMode, setViewMode] = useState<'ACTIVE' | 'HISTORY' | 'DEPOSIT'>('ACTIVE');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
 
@@ -36,6 +38,10 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
     const [showScanResult, setShowScanResult] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Security Modal State
+    const [securityModalOpen, setSecurityModalOpen] = useState(false);
+    const [securityAction, setSecurityAction] = useState<{ type: 'START' | 'CLOSE' | 'VOID' | 'RESTORE', sessionId?: string } | null>(null);
 
     // Get unique categories from items
     const categories = useMemo(() => {
@@ -114,7 +120,34 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
         stopCamera();
     };
 
-    const handleStartSession = () => {
+    // --- SECURITY HANDLERS ---
+    const requestAction = (type: 'START' | 'CLOSE' | 'VOID' | 'RESTORE', sessionId?: string) => {
+        setSecurityAction({ type, sessionId });
+        setSecurityModalOpen(true);
+    };
+
+    const executeSecurityAction = () => {
+        if (!securityAction) return;
+
+        switch (securityAction.type) {
+            case 'START':
+                executeStartSession();
+                break;
+            case 'CLOSE':
+                executeCloseSession();
+                break;
+            case 'VOID':
+                if (securityAction.sessionId) executeVoidSession(securityAction.sessionId);
+                break;
+            case 'RESTORE':
+                if (securityAction.sessionId) executeRestoreSession(securityAction.sessionId);
+                break;
+        }
+        setSecurityModalOpen(false);
+        setSecurityAction(null);
+    };
+
+    const executeStartSession = () => {
         if (activeSession) return;
 
         const newSession: InventorySession = {
@@ -154,9 +187,9 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
         });
     };
 
-    const handleCloseSession = () => {
+    const executeCloseSession = () => {
         if (!activeSession) return;
-        if (!window.confirm('¿Confirmar cierre de inventario? Esto guardará los conteos finales.')) return;
+        // Window confirm removed, handled by modal
 
         const closedSession: InventorySession = {
             ...activeSession,
@@ -194,8 +227,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
         playSound('CLICK');
     };
 
-    const handleVoidSession = (sessionId: string) => {
-        if (!window.confirm('¿Estás seguro de ANULAR este inventario? Esta acción no se puede deshacer y quedará registrada.')) return;
+    const executeVoidSession = (sessionId: string) => {
+        // Window confirm removed
 
         const voidedSession = sessions.find(s => s.id === sessionId);
         if (!voidedSession) return;
@@ -211,8 +244,8 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
         playSound('SUCCESS');
     };
 
-    const handleRestoreSession = (sessionId: string) => {
-        if (!window.confirm('¿Confirmar restauración de este inventario anulado? Volverá al estado Cerrado.')) return;
+    const executeRestoreSession = (sessionId: string) => {
+        // Window confirm removed
 
         const restoredSession = sessions.find(s => s.id === sessionId);
         if (!restoredSession) return;
@@ -246,6 +279,24 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
             columns,
             rows,
             `Inventario_${new Date(session.date).toISOString().split('T')[0]}`
+        );
+        playSound('CLICK');
+    };
+
+    const handleExportDepositPDF = () => {
+        const columns = ['Insumo', 'Unidad', 'Stock Actual', 'Última Act.'];
+        const rows = activeItems.map(i => [
+            i.name,
+            i.unit,
+            i.currentStock?.toString() || '0',
+            new Date(i.updatedAt).toLocaleDateString()
+        ]);
+
+        exportToPDF(
+            'Reporte de Stock en Depósito',
+            columns,
+            rows,
+            `Stock_Deposito_${new Date().toISOString().split('T')[0]}`
         );
         playSound('CLICK');
     };
@@ -422,7 +473,16 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
                                 }`}
                         >
-                            Sesión Actual
+                            Conteo Actual
+                        </button>
+                        <button
+                            onClick={() => setViewMode('DEPOSIT')}
+                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${viewMode === 'DEPOSIT'
+                                ? 'bg-white dark:bg-sushi-dark text-sushi-gold shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                                }`}
+                        >
+                            Depósito
                         </button>
                         <button
                             onClick={() => setViewMode('HISTORY')}
@@ -480,20 +540,20 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                                     <Save className="w-5 h-5" />
                                 </button>
                                 <button
-                                    onClick={handleCloseSession}
+                                    onClick={() => requestAction('CLOSE')}
                                     className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold shadow-lg shadow-red-500/20 transition-all flex items-center gap-2"
                                 >
                                     <CheckCircle2 className="w-4 h-4" />
-                                    Finalizar Turno
+                                    Finalizar Conteo
                                 </button>
                             </div>
                         ) : (
                             <button
-                                onClick={handleStartSession}
+                                onClick={() => requestAction('START')}
                                 className="px-6 py-3 bg-sushi-gold hover:bg-yellow-500 text-sushi-black rounded-lg font-bold shadow-lg shadow-sushi-gold/20 transition-all flex items-center gap-2 transform hover:scale-105"
                             >
                                 <Plus className="w-5 h-5" />
-                                Iniciar Turno
+                                Iniciar Conteo
                             </button>
                         )}
                     </div>
@@ -604,6 +664,111 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                 </>
             )}
 
+            {viewMode === 'DEPOSIT' && (
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-white dark:bg-sushi-dark p-4 rounded-xl border border-gray-200 dark:border-white/5 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg text-yellow-600 dark:text-yellow-400">
+                                <Box className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-white">Control de Depósito</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Administra el stock físico actual.</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleExportDepositPDF}
+                            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg hover:bg-gray-50 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 font-bold text-sm transition-all"
+                        >
+                            <FileText className="w-4 h-4 text-green-600" />
+                            Exportar Informe PDF
+                        </button>
+                    </div>
+
+                    {activeSession ? (
+                        <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-r-xl flex items-start gap-4 animate-shake">
+                            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <h3 className="font-bold text-red-700 dark:text-red-400 uppercase tracking-wide text-xs mb-1">Modo Lectura Activado</h3>
+                                <p className="font-bold text-red-800 dark:text-red-300">
+                                    ¡Edición Bloqueada! Hay un conteo en curso.
+                                </p>
+                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                                    Para modificar el stock del depósito, primero debes finalizar o anular la sesión de inventario activa ("Conteo Actual").
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-4 rounded-r-xl flex items-start gap-4">
+                            <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <h3 className="font-bold text-green-700 dark:text-green-400 uppercase tracking-wide text-xs mb-1">Edición Habilitada</h3>
+                                <p className="text-sm text-green-800 dark:text-green-300">
+                                    Puedes corregir manualmente el stock si detectas diferencias. Los cambios se guardarán automáticamente.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Inventory List for Deposit */}
+                    <div className="bg-white dark:bg-sushi-dark rounded-xl shadow-sm border border-gray-200 dark:border-white/5 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-50 dark:bg-white/5 text-xs uppercase text-gray-500 dark:text-gray-400 font-medium border-b border-gray-100 dark:border-white/5">
+                                    <tr>
+                                        <th className="px-4 py-3">Insumo</th>
+                                        <th className="px-4 py-3 text-center">Unidad</th>
+                                        <th className="px-4 py-3 text-center w-48">Stock en Depósito</th>
+                                        <th className="px-4 py-3 w-32">Última Act.</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                                    {activeItems.map((item) => (
+                                        <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                            <td className="px-4 py-3">
+                                                <div className="font-medium text-gray-900 dark:text-white">{item.name}</div>
+                                                {item.brand && <div className="text-[10px] text-gray-500">{item.brand}</div>}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="px-3 py-1 bg-sushi-gold text-black rounded-md text-xs font-bold font-mono shadow-sm border border-yellow-500/50">
+                                                    {item.unit}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        disabled={!!activeSession}
+                                                        value={item.currentStock ?? ''}
+                                                        onChange={(e) => onUpdateProduct({ ...item, currentStock: parseFloat(e.target.value) || 0 })}
+                                                        className={`w-full px-2 py-2 border rounded text-center font-bold outline-none transition-colors ${activeSession
+                                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30 text-gray-500 cursor-not-allowed pl-8'
+                                                            : 'bg-white dark:bg-black/20 border-gray-200 dark:border-white/10 focus:border-sushi-gold dark:text-white'
+                                                            }`}
+                                                        placeholder="0"
+                                                    />
+                                                    {!!activeSession && (
+                                                        <Lock className="w-3 h-3 text-red-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-xs text-gray-500">
+                                                {new Date(item.updatedAt).toLocaleDateString()}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {activeItems.length === 0 && (
+                            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                                No se encontraron insumos.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {viewMode === 'HISTORY' && (
                 <div className="space-y-4">
                     {sessions.filter(s => s.status === 'CLOSED' || s.status === 'VOID').length === 0 ? (
@@ -618,15 +783,15 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                                 key={session.id}
                                 onClick={() => setViewSession(session)}
                                 className={`p-4 rounded-xl border transition-all cursor-pointer group relative hover:shadow-lg ${session.status === 'VOID'
-                                        ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30'
-                                        : 'bg-white dark:bg-sushi-dark border-gray-200 dark:border-white/5 hover:border-sushi-gold/30'
+                                    ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30'
+                                    : 'bg-white dark:bg-sushi-dark border-gray-200 dark:border-white/5 hover:border-sushi-gold/30'
                                     }`}
                             >
                                 <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-3">
                                         <div className={`p-2 rounded-lg ${session.status === 'VOID'
-                                                ? 'bg-red-100 text-red-600'
-                                                : 'bg-green-50 dark:bg-green-900/20 text-green-600'
+                                            ? 'bg-red-100 text-red-600'
+                                            : 'bg-green-50 dark:bg-green-900/20 text-green-600'
                                             }`}>
                                             {session.status === 'VOID' ? <Trash2 className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
                                         </div>
@@ -646,7 +811,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                                     <div className="flex items-center gap-2">
                                         {session.status === 'VOID' ? (
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); handleRestoreSession(session.id); }}
+                                                onClick={(e) => { e.stopPropagation(); requestAction('RESTORE', session.id); }}
                                                 className="p-2 text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors z-10 font-bold flex items-center gap-1"
                                                 title="Restaurar Inventario"
                                             >
@@ -654,7 +819,7 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                                             </button>
                                         ) : (
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); handleVoidSession(session.id); }}
+                                                onClick={(e) => { e.stopPropagation(); requestAction('VOID', session.id); }}
                                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors z-10"
                                                 title="Anular Inventario"
                                             >
@@ -675,6 +840,21 @@ export const InventoryManager: React.FC<InventoryManagerProps> = ({ items, sessi
                     )}
                 </div>
             )}
+            {/* Security Confirmation Modal */}
+            <SecurityConfirmationModal
+                isOpen={securityModalOpen}
+                onClose={() => setSecurityModalOpen(false)}
+                onConfirm={executeSecurityAction}
+                title={securityAction?.type === 'START' ? '¿Iniciar Conteo?' : securityAction?.type === 'CLOSE' ? '¿Finalizar Conteo?' : securityAction?.type === 'VOID' ? '¿Anular Inventario?' : '¿Restaurar Inventario?'}
+                description={
+                    securityAction?.type === 'START' ? '⚠️ ATENCIÓN: Al iniciar un conteo, se registrará el inicio del turno en la cocina. Asegúrate de que el personal esté listo.' :
+                        securityAction?.type === 'CLOSE' ? 'Se guardarán los conteos finales y se calculará el consumo. Esta acción finaliza el turno.' :
+                            securityAction?.type === 'VOID' ? 'ATENCIÓN: Se anulará este registro de inventario. Esta acción quedará auditada.' :
+                                'El inventario volverá al estado "Cerrado" y será válido nuevamente.'
+                }
+                actionType={securityAction?.type === 'VOID' ? 'danger' : 'warning'}
+                confirmText={securityAction?.type === 'START' ? 'Iniciar' : securityAction?.type === 'CLOSE' ? 'Finalizar Turno' : securityAction?.type === 'VOID' ? 'Confirmar Anulación' : 'Restaurar'}
+            />
         </div>
     );
 };

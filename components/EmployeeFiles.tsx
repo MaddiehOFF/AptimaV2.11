@@ -5,6 +5,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FileDown, Trash2, Calendar, User, Phone, MapPin, Building, CreditCard, Hash, Briefcase, FileText, CheckCircle2, UserCheck, AlertTriangle, Clock, Link, Check, ClipboardList, History, Eye } from 'lucide-react';
 import { TaskChecklist } from './TaskChecklist';
+import { ConfirmationModal } from './common/ConfirmationModal';
 import { RankBadge } from './EmployeeManagement';
 import { generateUUID } from '../utils/uuid';
 
@@ -38,6 +39,18 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
     const [selectedEmpId, setSelectedEmpId] = useState<string | null>(null);
     const [justCopied, setJustCopied] = useState(false);
     const [activeTab, setActiveTab] = useState<'PROFILE' | 'CHECKLIST_HISTORY' | 'NOTES'>('PROFILE');
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     // Filter employees for Coordinators
     // Filter employees for Coordinators
@@ -116,17 +129,22 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
     };
 
     const handleDeleteSnapshot = async (id: string) => {
-        if (!confirm('¿Estás seguro de que quieres eliminar este checklist permanentemente?')) return;
-
-        try {
-            const { error } = await supabase.from('checklist_snapshots').delete().eq('id', id);
-            if (error) throw error;
-            alert('Checklist eliminado correctamente. Actualice la página si persiste en la vista.');
-            // Trigger refresh logic if available, or rely on parent/realtime
-        } catch (err) {
-            console.error('Error deleting snapshot:', err);
-            alert('Error al eliminar el checklist.');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Checklist?',
+            message: '¿Estás seguro de que quieres eliminar este checklist permanentemente?',
+            onConfirm: async () => {
+                try {
+                    const { error } = await supabase.from('checklist_snapshots').delete().eq('id', id);
+                    if (error) throw error;
+                    alert('Checklist eliminado correctamente. Actualice la página si persiste en la vista.');
+                    // Trigger refresh logic if available, or rely on parent/realtime
+                } catch (err) {
+                    console.error('Error deleting snapshot:', err);
+                    alert('Error al eliminar el checklist.');
+                }
+            }
+        });
     };
 
     const getEmployeeNotes = (empId: string) => {
@@ -156,13 +174,29 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
         setEmployees(employees.map(e => e.id === emp.id ? { ...e, assignedDays: newDays } : e));
     };
 
-    const shareSchedule = (emp: Employee) => {
+    const handleShareSchedule = (emp: Employee) => {
         const days = emp.assignedDays?.join(', ') || 'Ninguno';
         const text = `*CRONOGRAMA SUSHIBLACK*\n\nHola ${emp.name},\nSe han actualizado tus días asignados para esta semana.\n\n📅 *Días:* ${days}\n⏰ *Horario:* ${emp.scheduleStart} - ${emp.scheduleEnd}\n\nIngresa aquí para confirmar: https://sushiblack.app/schedule/${emp.id}`;
 
         navigator.clipboard.writeText(text);
         setJustCopied(true);
         setTimeout(() => setJustCopied(false), 2000);
+    };
+
+    const handleDeleteNote = async (noteId: string) => {
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Nota?',
+            message: '¿Eliminar esta nota?',
+            onConfirm: () => {
+                const note = notes.find(n => n.id === noteId);
+                if (!note) return;
+
+                const updatedNote = { ...note, deletedAt: new Date().toISOString() };
+                const newNotes = notes.map(n => n.id === noteId ? updatedNote : n);
+                setNotes(newNotes);
+            }
+        });
     };
 
     return (
@@ -222,20 +256,7 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
                         const weekDays = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
                         const empSnapshots = checklistSnapshots.filter(s => s.employeeId === emp.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                        const handleDeleteNote = async (noteId: string) => {
-                            if (!confirm('¿Eliminar esta nota?')) return;
-                            const note = notes.find(n => n.id === noteId);
-                            if (!note) return;
 
-                            const updatedNote = { ...note, deletedAt: new Date().toISOString() };
-                            // Optimistic update handled by Sync Hook implicitly if we call setNotes with mapped array?
-                            // Actually App.tsx hook uses 'update' method exposed as 'set' in a generic way?
-                            // Wait, App.tsx passes `setCoordinatorNotes` which is the `set` from hook.
-                            // `useSupabaseCollection` hook's `set` (setWithSync) compares ID to ID.
-                            // So we should update the array.
-                            const newNotes = notes.map(n => n.id === noteId ? updatedNote : n);
-                            setNotes(newNotes);
-                        };
 
                         const getAuthorName = (authorId: string) => {
                             if (!authorId) return 'Desconocido';
@@ -472,7 +493,7 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
                                                             Cronograma Semanal
                                                         </h3>
                                                         <button
-                                                            onClick={() => shareSchedule(emp)}
+                                                            onClick={() => handleShareSchedule(emp)}
                                                             className="text-xs bg-sushi-gold text-sushi-black px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-sushi-goldhover transition-colors"
                                                         >
                                                             {justCopied ? <Check className="w-3 h-3" /> : <Link className="w-3 h-3" />}
@@ -600,6 +621,15 @@ export const EmployeeFiles: React.FC<EmployeeFilesProps> = ({ employees, setEmpl
                     })()}
                 </div>
             )}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="ELIMINAR"
+            />
         </div>
     );
 };

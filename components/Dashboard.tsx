@@ -4,6 +4,7 @@ import { AdminTask, Employee, InventorySession, OvertimeRecord, SanctionRecord, 
 import { Plus, Calendar as CalIcon, Trash2, Settings2, Move } from 'lucide-react';
 import { StaffWidget, CashWidget, KitchenWidget, QuickActionsWidget, ActivityFeedWidget, CalendarWidget } from './widgets/AdminWidgets';
 import { DashboardCustomizer } from './widgets/DashboardCustomizer';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface DashboardProps {
     employees: Employee[];
@@ -61,6 +62,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, records, tasks,
     const [newEventDate, setNewEventDate] = useState('');
     const [newEventVisibility, setNewEventVisibility] = useState<'ADMIN' | 'ALL'>('ALL');
 
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
+
     const handleAddEvent = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newEventTitle || !newEventDate) return;
@@ -78,9 +91,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, records, tasks,
     };
 
     const handleDeleteEvent = (id: string) => {
-        if (confirm('¿Eliminar evento?')) {
-            setCalendarEvents(calendarEvents.filter(e => e.id !== id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar evento?',
+            message: '¿Estás seguro de que quieres eliminar este evento?',
+            onConfirm: () => {
+                setCalendarEvents(calendarEvents.filter(e => e.id !== id));
+            }
+        });
     };
 
     // 3. WIDGET STATE
@@ -434,6 +452,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ employees, records, tasks,
                     </div>
                 </div>
             )}
+
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="ELIMINAR"
+            />
         </div>
     );
 };

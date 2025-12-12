@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Partner, RoyaltyPayment, WalletTransaction, PaymentMethod, RoyaltyHistoryItem } from '../types';
 import { Crown, Plus, Trash2, Edit2, CheckCircle2, AlertCircle, DollarSign, ArrowRight, X, Clock, Banknote, CreditCard, Minus } from 'lucide-react';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface RoyaltiesManagementProps {
     partners: Partner[];
@@ -16,6 +17,22 @@ interface RoyaltiesManagementProps {
 export const RoyaltiesManagement: React.FC<RoyaltiesManagementProps> = ({ partners, setPartners, royaltyPool, setTransactions, transactions, userName, royaltyHistory, addRoyaltyHistory }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'danger' | 'warning' | 'info';
+        onConfirm: () => void;
+        confirmText?: string;
+        cancelText?: string;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        onConfirm: () => { },
+    });
 
     // Partner Detail Modal State
     const [showDetailModal, setShowDetailModal] = useState(false);
@@ -108,9 +125,14 @@ export const RoyaltiesManagement: React.FC<RoyaltiesManagementProps> = ({ partne
 
     const handleDelete = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (window.confirm("¿Eliminar socio?")) {
-            setPartners(partners.filter(p => p.id !== id));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar socio?',
+            message: 'Eliminarás al socio permanentemente del sistema.',
+            type: 'danger',
+            confirmText: 'SÍ, ELIMINAR',
+            onConfirm: () => setPartners(partners.filter(p => p.id !== id))
+        });
     };
 
     const handleInjectFunds = (e: React.FormEvent) => {
@@ -585,6 +607,18 @@ export const RoyaltiesManagement: React.FC<RoyaltiesManagementProps> = ({ partne
                     </div>
                 </div>
             )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                cancelText={confirmModal.cancelText}
+            />
         </div>
     );
 };

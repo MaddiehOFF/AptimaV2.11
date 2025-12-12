@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Employee, ForumPost, User } from '../types';
 import { Send, Image as ImageIcon, Heart, MessageSquare, Trash2, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface ForumBoardProps {
     posts: ForumPost[];
@@ -14,6 +15,18 @@ export const ForumBoard: React.FC<ForumBoardProps> = ({ posts, setPosts, current
     const [newContent, setNewContent] = useState('');
     const [newImageUrl, setNewImageUrl] = useState('');
     const [showImageInput, setShowImageInput] = useState(false);
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     const canPost = !!currentUser; // Only admins can post
     const viewerId = currentUser ? currentUser.id : (currentMember ? currentMember.id : 'guest');
@@ -62,9 +75,14 @@ export const ForumBoard: React.FC<ForumBoardProps> = ({ posts, setPosts, current
     };
 
     const deletePost = (postId: string) => {
-        if (window.confirm('¿Borrar esta publicación?')) {
-            setPosts(posts.filter(p => p.id !== postId));
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Borrar Publicación?',
+            message: '¿Estás seguro de que quieres borrar esta publicación?',
+            onConfirm: () => {
+                setPosts(posts.filter(p => p.id !== postId));
+            }
+        });
     };
 
     // Helper for upload simulation
@@ -205,6 +223,16 @@ export const ForumBoard: React.FC<ForumBoardProps> = ({ posts, setPosts, current
                     })
                 )}
             </div>
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="BORRAR"
+            />
         </div>
     );
 };

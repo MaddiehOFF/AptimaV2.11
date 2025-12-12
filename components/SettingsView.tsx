@@ -1,12 +1,14 @@
 
 import React, { useState } from 'react';
 import { RolePermissions, PermissionKey, EmployeeRole, UserRole, UserPermissions } from '../types';
-import { Settings, Shield, Plus, Trash2, Box, Wallet, Lock, Save, Briefcase, User, FileText, CheckSquare, Calendar, MessageCircle, Mail, Download, Upload, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Settings, Shield, Plus, Trash2, Box, Wallet, Lock, Save, Briefcase, User, FileText, CheckSquare, Calendar, MessageCircle, Mail, Download, Upload, ChevronDown, ChevronUp, Clock, Truck, DollarSign } from 'lucide-react';
 import { playSound } from '../utils/soundUtils';
 import { supabase } from '../supabaseClient';
 import { useSupabaseCollection } from '../hooks/useSupabase';
 import { generateUserManual } from '../utils/manualGenerator';
 import { changelogData } from './changelogData';
+import { exportChangelogPDF } from '../utils/changelogExporter';
+import { ConfirmationModal } from './common/ConfirmationModal';
 
 interface SettingsViewProps {
     rolePermissions: RolePermissions;
@@ -43,6 +45,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
     const [newRoleName, setNewRoleName] = useState('');
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const [resetCode, setResetCode] = useState('');
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
 
     const handleHardReset = async () => {
         if (resetCode !== 'CONFIRMAR') return;
@@ -152,6 +166,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
         { id: 'canViewCalendar', label: 'Calendario', icon: Calendar },
         { id: 'canViewForum', label: 'Foro Staff', icon: MessageCircle },
         { id: 'canViewCommunication', label: 'Comunicación', icon: Mail },
+        { id: 'canViewSuppliers', label: 'Proveedores', icon: Truck },
+        { id: 'canViewBudgetRequests', label: 'Presupuestos', icon: DollarSign },
     ];
 
     const togglePermission = (role: string, permission: PermissionKey) => {
@@ -185,14 +201,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
     };
 
     const handleDeleteRole = (role: string) => {
-        if (window.confirm(`¿Eliminar rol personalizado ${role}?`)) {
-            setCustomRoles(customRoles.filter(r => r !== role));
-            // Clean up permissions
-            const newPermissions = { ...rolePermissions };
-            delete newPermissions[role];
-            setRolePermissions(newPermissions);
-            playSound('CLICK');
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: '¿Eliminar Rol?',
+            message: `¿Eliminar rol personalizado "${role}"?`,
+            onConfirm: () => {
+                setCustomRoles(customRoles.filter(r => r !== role));
+                // Clean up permissions
+                const newPermissions = { ...rolePermissions };
+                delete newPermissions[role];
+                setRolePermissions(newPermissions);
+                playSound('CLICK');
+            }
+        });
     };
 
     const sortedChangelog = [...changelogData].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -413,13 +434,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
                                     reader.onload = async (ev) => {
                                         try {
                                             const json = JSON.parse(ev.target?.result as string);
-                                            if (window.confirm(`¿Estás seguro de IMPORTAR datos? Esto sobrescribirá los datos existentes detectados en el archivo. Se encontraron ${Object.keys(json).length} colecciones.`)) {
-                                                // Handle Import Logic Here or pass prop
-                                                // Ideally we pass a prop onImportData. For now let's just alert strictly.
-                                                // User instructions said "Add Configuration Import".
-                                                // I will propagate it up or implement basic logic here if I have access to supabase. I do.
-                                                await handleImportData(json);
-                                            }
+                                            setConfirmModal({
+                                                isOpen: true,
+                                                title: '¿Importar Datos?',
+                                                message: `¿Estás seguro de IMPORTAR datos? Esto sobrescribirá los datos existentes. Se encontraron ${Object.keys(json).length} colecciones.`,
+                                                onConfirm: async () => {
+                                                    await handleImportData(json);
+                                                }
+                                            });
                                         } catch (err) {
                                             alert('Archivo inválido');
                                         }
@@ -505,6 +527,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
 
             {/* CHANGELOG - Historial de Actualizaciones */}
             <CollapsibleSection title="Historial de Actualizaciones" icon={Clock} defaultOpen={true}>
+                <div className="flex justify-end mb-4">
+                    <button
+                        onClick={() => { playSound('CLICK'); exportChangelogPDF(sortedChangelog); }}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white rounded-lg text-sm font-bold transition-colors shadow-sm"
+                    >
+                        <Download className="w-4 h-4" />
+                        Exportar PDF
+                    </button>
+                </div>
                 <div className="space-y-6">
                     {sortedChangelog.map((log, index) => (
                         <div key={index} className="relative pl-6 border-l-2 border-gray-200 dark:border-white/10 pb-2 last:pb-0">
@@ -525,6 +556,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ rolePermissions, set
                     ))}
                 </div>
             </CollapsibleSection>
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type="danger"
+                confirmText="CONFIRMAR"
+            />
         </div>
     );
 };
