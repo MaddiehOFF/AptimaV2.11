@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, Users, Clock, BrainCircuit, AlertTriangle, UserCog, LogOut, Sun, Moon, FolderOpen, ClipboardCheck, CalendarRange, User, Banknote, MessageSquare, Briefcase, Box, LineChart, Sparkles, Command, Wallet, Tag, Crown, BarChart3, Settings, RefreshCcw, GripVertical, Edit3, Calendar, Camera, Upload, Menu, X, Truck, FileText, Zap, Coffee } from 'lucide-react';
+import { LayoutDashboard, Users, Clock, BrainCircuit, AlertTriangle, UserCog, LogOut, Sun, Moon, FolderOpen, ClipboardCheck, CalendarRange, User, Banknote, MessageSquare, Briefcase, Box, LineChart, Sparkles, Command, Wallet, Tag, Crown, BarChart3, Settings, RefreshCcw, GripVertical, Edit3, Calendar, Camera, Upload, Menu, X, Truck, FileText, Zap, Coffee, BookOpen } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-import { View, User as UserType, Employee, RolePermissions, PermissionKey } from '../types';
+import { View, User as UserType, Employee, RolePermissions, PermissionKey, UserPermissions } from '../types';
 import { playSound } from '../utils/soundUtils';
 import { SidebarCustomizer, SidebarItemConfig } from './SidebarCustomizer';
 
@@ -45,54 +45,55 @@ const MEMBER_NAV_DEF: NavItemDef[] = [
 ];
 
 
-const ADMIN_NAV_GROUPS_DEF = [
+const ADMIN_NAV_GROUPS_DEF: { title: string; id: string; items: NavItemDef[] }[] = [
     {
         title: 'Principal',
         id: 'header-main',
         items: [
-            { id: View.DASHBOARD, label: 'Panel General', icon: LayoutDashboard, domId: 'nav-dashboard', adminPerm: 'ALWAYS' },
+            { id: View.DASHBOARD, label: 'Panel General', icon: LayoutDashboard, domId: 'nav-dashboard', adminPerm: 'dashboard_view' },
         ]
     },
     {
         title: 'Gestión Operativa',
         id: 'header-ops',
         items: [
-            { id: View.EMPLOYEES, label: 'Empleados', icon: Users, domId: 'nav-employees', adminPerm: 'viewHr' },
-            { id: View.FILES, label: 'Expedientes', icon: FolderOpen, domId: 'nav-files', adminPerm: 'viewHr' },
-            { id: View.OVERTIME, label: 'Calendario', icon: Calendar, domId: 'nav-overtime', adminPerm: 'viewOps' },
-            { id: View.SANCTIONS, label: 'Gestión disciplinaria', icon: AlertTriangle, domId: 'nav-sanctions', adminPerm: 'viewOps' },
-            { id: View.CASH_REGISTER, label: 'Caja / Movimientos', icon: Tag, domId: 'nav-cash', adminPerm: 'ALWAYS' },
+            { id: View.EMPLOYEES, label: 'Empleados', icon: Users, domId: 'nav-employees', adminPerm: 'hr_view' },
+            { id: View.FILES, label: 'Expedientes', icon: FolderOpen, domId: 'nav-files', adminPerm: 'files_view' },
+            { id: View.OVERTIME, label: 'Calendario', icon: Calendar, domId: 'nav-overtime', adminPerm: 'ops_view' },
+            { id: View.SANCTIONS, label: 'Gestión Disciplinaria', icon: AlertTriangle, domId: 'nav-sanctions', adminPerm: 'sanctions_view' },
+            { id: View.CASH_REGISTER, label: 'Caja / Movimientos', icon: Tag, domId: 'nav-cash', adminPerm: 'cash_view' },
         ]
     },
     {
         title: 'Finanzas',
         id: 'header-finance',
         items: [
-            { id: View.WALLET, label: 'Billetera Global', icon: Wallet, domId: 'nav-wallet', adminPerm: 'viewFinance' },
-            { id: View.ROYALTIES, label: 'Regalías Socios', icon: Crown, domId: 'nav-royalties', adminPerm: 'viewFinance' },
-            { id: View.PAYROLL, label: 'Pagos y Nómina', icon: Banknote, domId: 'nav-payroll', adminPerm: 'viewFinance' },
-            { id: View.FINANCE, label: 'Calculadora Costos', icon: LineChart, domId: 'nav-fin', adminPerm: 'viewFinance' },
-            { id: View.STATISTICS, label: 'Estadísticas', icon: BarChart3, domId: 'nav-stats', adminPerm: 'viewFinance' },
+            { id: View.WALLET, label: 'Billetera Global', icon: Wallet, domId: 'nav-wallet', adminPerm: 'wallet_view' },
+            { id: View.ROYALTIES, label: 'Regalías Socios', icon: Crown, domId: 'nav-royalties', adminPerm: 'royalties_view' },
+            { id: View.PAYROLL, label: 'Pagos y Nómina', icon: Banknote, domId: 'nav-payroll', adminPerm: 'payroll_view' },
+            { id: View.FINANCE, label: 'Calculadora Costos', icon: LineChart, domId: 'nav-fin', adminPerm: 'finance_view' },
+            { id: View.STATISTICS, label: 'Estadísticas', icon: BarChart3, domId: 'nav-stats', adminPerm: 'stats_view' },
         ]
     },
     {
         title: 'Administración',
         id: 'header-admin',
         items: [
-            { id: View.OFFICE, label: 'Oficina Admin', icon: FolderOpen, domId: 'nav-office', adminPerm: 'viewOps' },
-            { id: View.INVENTORY, label: 'Inventario', icon: Box, domId: 'nav-inv', adminPerm: 'viewInventory' },
-            { id: View.SUPPLIERS, label: 'Insumos', icon: Truck, domId: 'nav-insumos', adminPerm: 'viewInventory' },
-            { id: View.USERS, label: 'Usuarios', icon: UserCog, domId: 'nav-users', adminPerm: 'superAdmin' },
-            { id: View.PRODUCTS, label: 'Productos', icon: Box, domId: 'nav-products', adminPerm: 'viewFinance' },
-            { id: View.SETTINGS, label: 'Configuración', icon: Settings, domId: 'nav-settings', adminPerm: 'superAdmin' },
+            { id: View.OFFICE, label: 'Oficina Admin', icon: FolderOpen, domId: 'nav-office', adminPerm: 'office_view' },
+            { id: View.INVENTORY, label: 'Inventario', icon: Box, domId: 'nav-inv', adminPerm: 'inventory_view' },
+            { id: View.SUPPLIERS, label: 'Insumos', icon: Truck, domId: 'nav-insumos', adminPerm: 'suppliers_view' }, // Updated from inventory_view
+            { id: View.USERS, label: 'Usuarios', icon: UserCog, domId: 'nav-users', adminPerm: 'users_view' },
+            { id: View.PRODUCTS, label: 'Productos', icon: Box, domId: 'nav-products', adminPerm: 'products_view' },
+            { id: View.SETTINGS, label: 'Configuración', icon: Settings, domId: 'nav-settings', adminPerm: 'settings_view' },
         ]
     },
     {
         title: 'Estratégico',
         id: 'header-strategic',
         items: [
-            { id: View.FORUM, label: 'Foro Social', icon: MessageSquare, domId: 'nav-forum', adminPerm: 'ALWAYS' },
-            { id: View.AI_REPORT, label: 'Consultor IA', icon: BrainCircuit, domId: 'nav-ai-report', adminPerm: 'ALWAYS' },
+            { id: View.FORUM, label: 'Foro Social', icon: MessageSquare, domId: 'nav-forum', adminPerm: 'member_view_welfare' },
+            { id: View.AI_REPORT, label: 'Consultor IA', icon: BrainCircuit, domId: 'nav-ai-report', adminPerm: 'ai_view' }, // Updated from ALWAYS
+            { id: View.MANUAL, label: 'Manual Operativo', icon: BookOpen, domId: 'nav-manual', adminPerm: 'manual_view' }, // Added
         ]
     },
 
@@ -231,56 +232,86 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
     // --- DYNAMIC PERMISSION OVERRIDE LOGIC ---
     // Adds specific admin views to member sidebar if they have granular permissions
     useEffect(() => {
-        const role = currentUser?.role || currentMember?.role || 'COCINA';
+        let role = currentUser?.role || currentMember?.role || 'COCINA';
+        if (currentMember) {
+            role = role.toUpperCase().replace(/\s+/g, '_');
+        }
+
         const perms = rolePermissions[role];
         if (!perms || memberConfig.length === 0) return;
 
         let needsUpdate = false;
-        const newConfig = [...memberConfig];
+        let newConfig = [...memberConfig];
 
-        // 1. Team Calendar (OVERTIME View)
-        // If user has 'memberViewTeamCalendar', ensure OVERTIME view is available
-        const hasTeamCal = perms.memberViewTeamCalendar;
-        const configHasTeamCal = newConfig.some(i => i.id === View.OVERTIME);
-        if (hasTeamCal && !configHasTeamCal) {
-            newConfig.push({
-                id: View.OVERTIME,
-                label: 'Calendario Equipo',
-                visible: true,
-                order: 90
-            });
-            needsUpdate = true;
-        }
+        // 1. Definition Map for Dynamic Injection
+        // Maps View ID -> Granular Permission Key required
+        // 1. Definition Map for Dynamic Injection
+        // Maps View ID -> Granular Permission Key required
+        const adminViewsToInject = [
+            { id: View.STATISTICS, label: 'Estadísticas', perm: 'stats_view', icon: BarChart3 },
+            { id: View.WALLET, label: 'Billetera Global', perm: 'wallet_view', icon: Wallet },
+            { id: View.INVENTORY, label: 'Inventario Cocina', perm: 'inventory_view', icon: Box },
+            { id: View.ROYALTIES, label: 'Regalías y Socios', perm: 'royalties_view', icon: Crown },
+            { id: View.SUPPLIERS, label: 'Insumos', perm: 'inventory_view', icon: Truck },
+            { id: View.PRODUCTS, label: 'Productos', perm: 'products_view', icon: Tag },
+            { id: View.SANCTIONS, label: 'Gestión Disciplinaria', perm: 'sanctions_view', icon: AlertTriangle },
+            { id: View.FILES, label: 'Expedientes', perm: 'files_view', icon: FolderOpen },
+            { id: View.OVERTIME, label: 'Calendario Equipo', perm: 'ops_view', icon: Calendar }
+        ];
 
-        // 2. All Files (FILES View)
-        // If user has 'memberViewAllFiles', ensure FILES view is available
-        const hasAllFiles = perms.memberViewAllFiles;
-        const configHasFiles = newConfig.some(i => i.id === View.FILES);
-        if (hasAllFiles && !configHasFiles) {
-            newConfig.push({
-                id: View.FILES,
-                label: 'Expedientes',
-                visible: true,
-                order: 98
-            });
-            needsUpdate = true;
-        }
+        // 2. Iterate and Inject
+        adminViewsToInject.forEach(item => {
+            let hasAccess = false;
+            // Check Granular Perm
+            if (perms[item.perm as keyof UserPermissions]) hasAccess = true;
 
-        // 3. Novedades (SANCTIONS View)
-        // Kept for Coordinator or if has viewOps specifically
-        const hasOps = perms.viewOps || role === 'COORDINADOR';
-        const configHasSanctions = newConfig.some(i => i.id === View.SANCTIONS);
-        if (hasOps && !configHasSanctions) {
-            newConfig.push({
-                id: View.SANCTIONS,
-                label: 'Novedades',
-                visible: true,
-                order: 99
-            });
-            needsUpdate = true;
-        }
+            // Specific overrides (Legacy/Hybrid)
+            if (item.id === View.OVERTIME && perms.member_view_team_calendar) hasAccess = true;
+            if (item.id === View.FILES && perms.member_view_files) hasAccess = true;
+            if (item.id === View.SANCTIONS && (perms.member_view_sanctions || perms.ops_view)) hasAccess = true;
+
+            // If has permission AND not already in config
+            if (hasAccess && !newConfig.find(i => i.id === item.id)) {
+                newConfig.push({
+                    id: item.id,
+                    label: item.label,
+                    visible: true,
+                    order: 90 + newConfig.length // Append at end
+                });
+                needsUpdate = true;
+            }
+        });
+
+        // 3. Remove Items if Permission Revoked (Bi-directional sync)
+        // We only remove items that are NOT in MEMBER_NAV_DEF (i.e., injected ones)
+        const memberDefIds = MEMBER_NAV_DEF.map(m => m.id);
+        const injectedItems = newConfig.filter(c => !memberDefIds.includes(c.id));
+
+        injectedItems.forEach(injected => {
+            // Re-verify permission. If lost, remove.
+            const def = adminViewsToInject.find(i => i.id === injected.id);
+            if (def) {
+                let stillHasAccess = false;
+                // Check Granular Perm
+                if (perms[def.perm as keyof UserPermissions]) stillHasAccess = true;
+
+                // Specific overrides re-check
+                if (def.id === View.OVERTIME && perms.member_view_team_calendar) stillHasAccess = true;
+                if (def.id === View.FILES && perms.member_view_files) stillHasAccess = true;
+                if (def.id === View.SANCTIONS && (perms.member_view_sanctions || perms.ops_view)) stillHasAccess = true;
+
+                if (!stillHasAccess) {
+                    const idx = newConfig.findIndex(c => c.id === injected.id);
+                    if (idx !== -1) {
+                        newConfig.splice(idx, 1);
+                        needsUpdate = true;
+                    }
+                }
+            }
+        });
 
         if (needsUpdate && setMemberConfig) {
+            newConfig.sort((a, b) => a.order - b.order);
             setMemberConfig(newConfig);
         }
     }, [currentUser, currentMember, rolePermissions, memberConfig, setMemberConfig]);
@@ -298,45 +329,69 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
     // --- RENDER HELPERS ---
 
     const renderMemberSidebar = () => {
-        const myRole = currentMember?.role || 'COCINA';
+        let myRole = currentMember?.role || 'COCINA';
+        if (currentMember) {
+            myRole = myRole.toUpperCase().replace(/\s+/g, '_');
+        }
         const myPermissions = rolePermissions[myRole];
 
-        const hasPermission = (key: PermissionKey | undefined) => {
-            if (!key) return true;
-            if (!myPermissions) return false;
-            if (myPermissions.superAdmin) return true;
-
-            // Map PermissionKey to UserPermissions
-            switch (key) {
-                case 'canViewChecklist': return myPermissions.memberViewChecklist;
-                case 'canViewCalendar': return myPermissions.memberViewMyCalendar;
-                // Coordinator / Advanced keys
-                case 'canViewTeamCalendar': return myPermissions.memberViewTeamCalendar;
-                case 'canViewOtherFiles': return myPermissions.memberViewAllFiles;
-                // Unified Welfare
-                case 'canViewForum': return myPermissions.memberViewWelfare;
-                // Standard Modules
-                case 'canViewInventory': return myPermissions.viewInventory;
-                case 'canViewCash': return myPermissions.viewFinance;
-                case 'canViewSanctions': return myPermissions.viewOps || myPermissions.memberViewSanctions;
-                case 'canViewProfile': return true;
-                default: return false;
+        const hasPermission = (key: PermissionKey | undefined, adminPerm?: string) => {
+            // 1. Native Member Check
+            if (key) {
+                if (!myPermissions) return false;
+                if (myPermissions.superAdmin) return true;
+                const pAny = myPermissions as any;
+                switch (key) {
+                    case 'canViewChecklist': return myPermissions.member_view_checklist ?? false;
+                    case 'canViewCalendar': return myPermissions.member_view_calendar ?? false;
+                    case 'canViewTeamCalendar': return myPermissions.member_view_team_calendar;
+                    case 'canViewOtherFiles': return myPermissions.member_view_files;
+                    case 'canViewForum': return myPermissions.member_view_welfare ?? false;
+                    case 'canViewInventory': return myPermissions.inventory_view ?? pAny.viewInventory;
+                    case 'canViewCash': return myPermissions.cash_view ?? pAny.viewFinance;
+                    case 'canViewSanctions': return myPermissions.sanctions_view ?? (pAny.viewOps || myPermissions.member_view_sanctions);
+                    case 'canViewProfile': return myPermissions.member_view_profile ?? true; // Default true only for backward compatibility until robust migration
+                    default: return false;
+                }
             }
+
+            // 2. Admin Perm Check (for injected items)
+            if (adminPerm) {
+                if (adminPerm === 'ALWAYS') return true;
+                if (myPermissions && myPermissions[adminPerm as keyof UserPermissions]) return true;
+            }
+
+            return true; // If no key required
         };
 
         return memberConfig.map(configItem => {
             if (!configItem.visible) return null;
-            let def = MEMBER_NAV_DEF.find(d => d.id === configItem.id);
 
-            // Fallbacks for Injected Admin Items
+            // 1. Try finding in Member Defs
+            let def = MEMBER_NAV_DEF.find(d => d.id === configItem.id);
+            let isAdminItem = false;
+
+            // 2. If not found, try finding in Admin Defs (Hybrid Injection)
             if (!def) {
-                if (configItem.id === View.OVERTIME) def = { id: View.OVERTIME, label: 'Calendario Equipo', icon: Calendar, domId: 'mem-overtime', permKey: 'canViewTeamCalendar' } as NavItemDef;
-                else if (configItem.id === View.FILES) def = { id: View.FILES, label: 'Expedientes', icon: FolderOpen, domId: 'mem-files', permKey: 'canViewOtherFiles' } as NavItemDef;
-                else if (configItem.id === View.SANCTIONS) def = { id: View.SANCTIONS, label: 'Novedades', icon: AlertTriangle, domId: 'mem-sanctions', permKey: 'canViewSanctions' } as NavItemDef;
+                for (const group of ADMIN_NAV_GROUPS_DEF) {
+                    const found = group.items.find(i => i.id === configItem.id);
+                    if (found) {
+                        def = found;
+                        isAdminItem = true;
+                        break;
+                    }
+                }
             }
 
             if (!def) return null;
-            if (!hasPermission(def.permKey)) return null;
+
+            // Permission Check
+            // If it's a native member item, use permKey. If injected admin item, use adminPerm.
+            if (isAdminItem) {
+                if (!hasPermission(undefined, def.adminPerm)) return null;
+            } else {
+                if (!hasPermission(def.permKey)) return null;
+            }
 
             return (
                 <button
@@ -373,11 +428,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, currentU
             if (!def) return null;
 
             // Check Permission
-            // Note: currentUser is known not null here in context, but TS might check.
-            // Mapping 'keyof UserType['permissions']'
-            if (def.adminPerm !== 'ALWAYS' && currentUser?.permissions) {
+            // [FIX] CRITICAL: Master Key for ADMIN/EMPRESA
+            const isSuper = currentUser?.role === 'ADMIN' || currentUser?.role === 'EMPRESA' || currentUser?.permissions?.superAdmin;
+
+            if (!isSuper && def.adminPerm !== 'ALWAYS' && currentUser?.permissions) {
                 const permKey = def.adminPerm as keyof typeof currentUser.permissions;
-                if (!currentUser.permissions[permKey]) return null;
+                let allowed = !!currentUser.permissions[permKey];
+
+                // FALLBACK LEGACY
+                if (!allowed) {
+                    const LEGACY_MAP: any = { 'hr_view': 'viewHr', 'ops_view': 'viewOps', 'finance_view': 'viewFinance', 'inventory_view': 'viewInventory' };
+                    if (LEGACY_MAP[permKey] && (currentUser.permissions as any)[LEGACY_MAP[permKey]]) allowed = true;
+                }
+
+                // [FIX] Fallback for Granular Member Permissions in Admin View
+                if (!allowed) {
+                    if (def.id === View.FILES && currentUser.permissions.member_view_files) allowed = true;
+                    if (def.id === View.OVERTIME && currentUser.permissions.member_view_team_calendar) allowed = true;
+                    if (def.id === View.SANCTIONS && currentUser.permissions.member_view_sanctions) allowed = true;
+                }
+
+                if (!allowed) return null;
             }
 
             const isActive = currentView === def.id;

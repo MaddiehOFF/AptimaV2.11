@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Employee, FixedExpense, WalletTransaction, PaymentMethod, BudgetAnalysis, FixedExpenseCategory, User } from '../types';
-import { Wallet, TrendingUp, TrendingDown, Clock, Check, Plus, Minus, Search, Sparkles, RefreshCcw, Calendar, Trash2, Banknote, CreditCard, AlertTriangle, Paperclip, Camera, Image as ImageIcon, X, PieChart as PieChartIcon, Zap, ThumbsUp, ThumbsDown, Bell, Ban, ArrowRight, Activity, Shield, Download, Building, Bot, Filter, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, GripVertical, FileText } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Clock, Check, Plus, Minus, Search, Sparkles, RefreshCcw, Calendar, Trash2, Banknote, CreditCard, AlertTriangle, Paperclip, Camera, Image as ImageIcon, X, PieChart as PieChartIcon, Zap, ThumbsUp, ThumbsDown, Bell, Ban, ArrowRight, Activity, Shield, Download, Building, Bot, Filter, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, GripVertical, FileText, Info } from 'lucide-react';
 import { generateBudgetAnalysis } from '../services/geminiService';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { playSound } from '../utils/soundUtils';
@@ -20,9 +20,11 @@ interface WalletViewProps {
     onOpenAssistant?: () => void;
     auditData?: { id: string, name: string, amount: number }[];
     setAuditData?: React.Dispatch<React.SetStateAction<{ id: string, name: string, amount: number }[]>>;
+    pendingPayroll?: number;
+    pendingRoyalties?: number;
 }
 
-export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTransactions, pendingDebt, userName, fixedExpenses = [], setFixedExpenses, employees = [], currentUser, onOpenAssistant, auditData = [], setAuditData }) => {
+export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTransactions, pendingDebt, userName, fixedExpenses = [], setFixedExpenses, employees = [], currentUser, onOpenAssistant, auditData = [], setAuditData, pendingPayroll = 0, pendingRoyalties = 0 }) => {
     const [activeTab, setActiveTab] = useState<'MOVEMENTS' | 'FIXED' | 'SIMULATOR' | 'AUDIT'>('MOVEMENTS');
 
     // ... (rest of the file until the button location)
@@ -98,6 +100,7 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
     const [loadingBudget, setLoadingBudget] = useState(false);
 
     // AI Chat State
+    const [showDebtModal, setShowDebtModal] = useState(false);
 
 
     const totalBalance = useMemo(() => {
@@ -358,6 +361,43 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                 </div>
             )}
 
+            {/* Debt Breakdown Modal */}
+            {showDebtModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={() => setShowDebtModal(false)}>
+                    <div className="bg-white dark:bg-sushi-dark w-full max-w-sm rounded-2xl p-6 border border-gray-200 dark:border-white/10 shadow-2xl animate-fade-in" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6 border-b border-gray-100 dark:border-white/5 pb-4">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <TrendingDown className="w-5 h-5 text-red-500" />
+                                Detalle de Deuda
+                            </h3>
+                            <button onClick={() => setShowDebtModal(false)} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        </div>
+
+                        <div className="space-y-4 mb-6">
+                            <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Sueldos Pendientes</span>
+                                <span className="text-lg font-mono font-bold text-gray-900 dark:text-white">{formatMoney(pendingPayroll)}</span>
+                            </div>
+                            <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-black/20 rounded-lg">
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Regalías Socios</span>
+                                <span className="text-lg font-mono font-bold text-gray-900 dark:text-white">{formatMoney(pendingRoyalties)}</span>
+                            </div>
+                            <div className="border-t border-gray-200 dark:border-white/10 pt-4 flex justify-between items-center">
+                                <span className="text-xs uppercase font-bold text-red-500">Pasivo Corriente Total</span>
+                                <span className="text-2xl font-mono font-bold text-red-500">{formatMoney(pendingDebt)}</span>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => setShowDebtModal(false)}
+                            className="w-full bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white py-3 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
+                        >
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-4xl font-serif text-gray-900 dark:text-white flex items-center gap-3">
@@ -413,8 +453,13 @@ export const WalletView: React.FC<WalletViewProps> = ({ transactions = [], setTr
                                 <Clock className="w-3 h-3" /> Actualizado: {new Date().toLocaleTimeString()}
                             </p>
                         </div>
-                        <div className="text-right bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                            <p className="text-gray-400 text-xs mb-1 uppercase font-bold">Pasivo Corriente (Deuda)</p>
+                        <div
+                            className="text-right bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10 cursor-pointer hover:bg-white/10 transition-colors group/debt"
+                            onClick={() => setShowDebtModal(true)}
+                        >
+                            <p className="text-gray-400 text-xs mb-1 uppercase font-bold flex items-center justify-end gap-1 group-hover/debt:text-white transition-colors">
+                                Pasivo Corriente (Deuda) <Info className="w-3 h-3" />
+                            </p>
                             <p className="text-2xl font-mono text-red-300 font-bold tracking-tight">-{formatMoney(pendingDebt)}</p>
                         </div>
                     </div>

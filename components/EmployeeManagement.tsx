@@ -172,7 +172,7 @@ const DaysSelector = ({ value = [], onChange }: { value?: string[], onChange: (d
   );
 };
 
-export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employees, setEmployees, sanctions }) => {
+export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employees, setEmployees, sanctions, customRoles = [] }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('GENERAL');
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -895,6 +895,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({ employee
                       <RoleSelector
                         value={formData.role}
                         onChange={(role, label) => setFormData({ ...formData, role, position: label })}
+                        customRoles={customRoles}
                       />
 
                       {/* New Password Field */}

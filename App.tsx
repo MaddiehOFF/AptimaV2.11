@@ -44,110 +44,85 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { setCookie, getCookie, deleteCookie } from './utils/cookieUtils';
 
 // DEFAULT ROLE PERMISSIONS
+// --- NEW DEFAULT PERMISSIONS STRUCTURE ---
+const EMPTY_PERMISSIONS: UserPermissions = {
+    dashboard_view: false,
+    hr_view: false, hr_create: false, hr_edit: false, hr_delete: false, hr_manage: false,
+    ops_view: false, ops_edit: false, ops_delete: false, ops_manage: false,
+    sanctions_view: false, sanctions_create: false, sanctions_approve: false, sanctions_manage: false,
+    files_view: false, files_manage: false,
+    cash_view: false, cash_register: false, cash_close: false, cash_delete: false, cash_manage: false,
+    office_view: false, office_create: false, office_delete: false,
+    payroll_view: false, payroll_manage: false,
+    users_view: false, users_manage: false,
+    products_view: false, products_manage: false,
+    settings_view: false, settings_manage: false,
+    finance_view: false, finance_manage: false,
+    wallet_view: false, wallet_create: false, wallet_delete: false, wallet_manage: false,
+    royalties_view: false, royalties_manage: false,
+    stats_view: false,
+    inventory_view: false, inventory_manage: false,
+    member_view_calendar: false, member_view_team_calendar: false, member_view_files: false,
+    member_view_checklist: false, member_view_welfare: false, member_view_sanctions: false,
+    member_view_profile: false,
+    superAdmin: false,
+
+    // New keys
+    suppliers_view: false, suppliers_manage: false,
+    ai_view: false,
+    manual_view: false, manual_manage: false
+};
+
 const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
-    'COCINA': {
-        viewHr: false, manageHr: false,
-        viewOps: false, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
-    },
-    'BARRA': {
-        viewHr: false, manageHr: false,
-        viewOps: true, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: true, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
-    },
-    'SALON': {
-        viewHr: false, manageHr: false,
-        viewOps: false, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
-    },
+    'COCINA': { ...EMPTY_PERMISSIONS },
+    'BARRA': { ...EMPTY_PERMISSIONS },
+    'SALON': { ...EMPTY_PERMISSIONS },
     'CAJA': {
-        viewHr: false, manageHr: false,
-        viewOps: true, manageOps: false,
-        viewFinance: true, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
+        ...EMPTY_PERMISSIONS,
+        cash_view: true, cash_register: true, cash_close: true
     },
     'ENCARGADO': {
-        viewHr: false, manageHr: false,
-        viewOps: true, manageOps: true,
-        viewFinance: true, manageFinance: false,
-        viewInventory: true, manageInventory: true,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: true, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        ...EMPTY_PERMISSIONS,
+        ops_view: true, ops_manage: true,
+        inventory_view: true, inventory_manage: true,
+        member_view_team_calendar: true, member_view_files: true,
+        member_view_sanctions: true
     },
-    'REPARTIDOR': {
-        viewHr: false, manageHr: false,
-        viewOps: false, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
-    },
-    'DELIVERY': {
-        viewHr: false, manageHr: false,
-        viewOps: false, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
-    },
+    'REPARTIDOR': { ...EMPTY_PERMISSIONS },
+    'DELIVERY': { ...EMPTY_PERMISSIONS },
     'EMPRESA': {
-        viewHr: true, manageHr: true,
-        viewOps: true, manageOps: true,
-        viewFinance: true, manageFinance: true,
-        viewInventory: true, manageInventory: true,
+        ...EMPTY_PERMISSIONS,
         superAdmin: true,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: true, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        dashboard_view: true, hr_view: true, hr_manage: true,
+        ops_view: true, ops_manage: true
     },
     'GERENTE': {
-        viewHr: true, manageHr: true,
-        viewOps: true, manageOps: true,
-        viewFinance: true, manageFinance: true,
-        viewInventory: true, manageInventory: true,
+        ...EMPTY_PERMISSIONS,
         superAdmin: true,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: true, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        dashboard_view: true
     },
     'COORDINADOR': {
-        viewHr: true, manageHr: false,
-        viewOps: true, manageOps: true,
-        viewFinance: true, manageFinance: false,
-        viewInventory: true, manageInventory: true,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: true, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        ...EMPTY_PERMISSIONS,
+        hr_view: true, ops_view: true, ops_manage: true,
+        sanctions_view: true, sanctions_approve: true,
+        files_view: true,
+        member_view_team_calendar: true, member_view_files: true
     },
     'JEFE_COCINA': {
-        viewHr: false, manageHr: false,
-        viewOps: true, manageOps: true,
-        viewFinance: false, manageFinance: false,
-        viewInventory: true, manageInventory: true,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        ...EMPTY_PERMISSIONS,
+        ops_view: true,
+        inventory_view: true, inventory_manage: true
     },
     'ADMINISTRATIVO': {
-        viewHr: true, manageHr: false,
-        viewOps: true, manageOps: false,
-        viewFinance: true, manageFinance: true,
-        viewInventory: true, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: true, memberViewAllFiles: true, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: true
+        ...EMPTY_PERMISSIONS,
+        hr_view: true, hr_manage: true,
+        payroll_view: true, payroll_manage: true,
+        finance_view: true, finance_manage: true,
+        office_view: true, office_create: true
     },
     'MOSTRADOR': {
-        viewHr: false, manageHr: false,
-        viewOps: true, manageOps: false,
-        viewFinance: false, manageFinance: false,
-        viewInventory: false, manageInventory: false,
-        superAdmin: false,
-        memberViewMyCalendar: true, memberViewTeamCalendar: false, memberViewAllFiles: false, memberViewChecklist: true, memberViewWelfare: true, memberViewSanctions: false
+        ...EMPTY_PERMISSIONS,
+        ops_view: true
     }
 };
 
@@ -966,63 +941,78 @@ const App: React.FC = () => {
                                     password: '',
                                     photoUrl: currentMember!.photoUrl,
                                     permissions: {
-                                        superAdmin: ['EMPRESA', 'GERENTE'].includes(currentMember!.role as string),
-                                        viewHr: memberPerms?.viewHr || false,
-                                        manageHr: memberPerms?.manageHr || false,
-                                        viewOps: memberPerms?.viewOps || false,
-                                        manageOps: memberPerms?.manageOps || false,
-                                        viewFinance: memberPerms?.viewFinance || false,
-                                        manageFinance: memberPerms?.manageFinance || false,
-                                        viewInventory: memberPerms?.viewInventory || false,
-                                        manageInventory: memberPerms?.manageInventory || false,
-                                        memberViewMyCalendar: memberPerms?.memberViewMyCalendar ?? true,
-                                        memberViewTeamCalendar: memberPerms?.memberViewTeamCalendar ?? false,
-                                        memberViewAllFiles: memberPerms?.memberViewAllFiles ?? false,
-                                        memberViewChecklist: memberPerms?.memberViewChecklist ?? true,
-                                        memberViewWelfare: memberPerms?.memberViewWelfare ?? true,
-                                        memberViewSanctions: memberPerms?.memberViewSanctions ?? false
+                                        // Merge DEFAULT with whatever is in DB (implicit or explicit)
+                                        // For now, if memberPerms exists, we assume it matches the new structure OR we need to migrate it on fly?
+                                        // Simplification: We blindly cast. The UI RoleManager will handle setting new keys.
+                                        ...EMPTY_PERMISSIONS, // Defaults
+                                        ...(memberPerms || {}) // Overrides
                                     }
                                 };
 
                                 // 2. Helper for Granular Permission Checks
                                 const hasPermission = (key: PermissionKey): boolean => {
-                                    // Helper to map legacy keys to new granular flags
+                                    // Helper to map legacy/app keys to new granular flags
                                     const checkGranular = (p: UserPermissions, k: PermissionKey): boolean => {
-                                        if (p.superAdmin) return true;
+                                        if (p.superAdmin) return true; // Super Admin overrides everything
+
+                                        const anyP = p as any; // Cast for legacy fallback
                                         switch (k) {
-                                            case 'canViewHR': return p.viewHr;
-                                            case 'canViewFiles': return p.viewHr;
-                                            case 'canViewUsers': return p.superAdmin; // Only superadmin sees users for now
-                                            case 'canViewOvertime': return p.viewOps;
-                                            case 'canViewSanctions': return p.viewOps;
-                                            case 'canViewChecklist': return p.viewOps;
-                                            case 'canViewFinance': return p.viewFinance;
-                                            case 'canViewPayroll': return p.viewFinance;
-                                            case 'canViewWallet': return p.viewFinance;
-                                            case 'canViewRoyalties': return p.viewFinance;
-                                            case 'canViewCash': return p.viewFinance;
-                                            case 'canViewBudgetRequests': return p.viewFinance;
-                                            case 'canViewInventory': return p.viewInventory;
-                                            case 'canViewSuppliers': return p.viewInventory;
-                                            case 'canViewProducts': return p.viewInventory;
-                                            case 'canViewCalendar': return true; // Everyone sees calendar
-                                            case 'canViewForum': return true; // Everyone sees forum
-                                            case 'canViewCommunication': return true; // Everyone sees notices
+                                            // HR
+                                            case 'canViewHR': return p.hr_view ?? anyP.viewHr;
+                                            case 'canViewFiles': return p.files_view ?? (anyP.viewHr || p.member_view_files);
+
+                                            // Operations
+                                            case 'canViewOps': return p.ops_view ?? anyP.viewOps;
+                                            case 'canViewOvertime': return p.ops_view ?? (anyP.viewOps || p.member_view_team_calendar);
+                                            case 'canViewSanctions': return p.sanctions_view ?? (anyP.viewOps || p.member_view_sanctions);
+                                            case 'canViewChecklist': return p.member_view_checklist ?? (anyP.viewOps || true); // Default true for checklist if undefined
+
+                                            // Finance
+                                            case 'canViewFinance': return p.finance_view ?? anyP.viewFinance;
+                                            case 'canViewFinancials': return p.finance_view ?? (anyP.viewFinance || p.wallet_view || p.payroll_view);
+                                            case 'canViewWallet': return p.wallet_view ?? anyP.viewFinance;
+                                            case 'canViewCash': return p.cash_view ?? anyP.viewFinance;
+                                            case 'canViewRoyalties': return p.royalties_view ?? anyP.viewFinance;
+                                            case 'canViewBudgetRequests': return p.finance_view ?? anyP.viewFinance;
+                                            case 'canViewStatistics': return p.stats_view ?? (p.finance_view || anyP.viewFinance); // New map
+
+                                            // Inventory & Products
+                                            case 'canViewInventory': return p.inventory_view ?? anyP.viewInventory;
+                                            case 'canViewProducts': return p.products_view ?? (p.inventory_view || anyP.viewInventory);
+                                            case 'canViewSuppliers': return p.inventory_view ?? anyP.viewInventory;
+
+                                            // System & Admin
+                                            case 'canViewUsers': return p.users_view ?? p.superAdmin;
+                                            case 'canViewSettings': return p.settings_view ?? p.superAdmin;
+                                            case 'canViewOffice': return p.office_view ?? (p.superAdmin || anyP.manageHr);
+                                            case 'canViewDashboard': return p.dashboard_view ?? true; // Default true
+
+                                            // Member Portal Specifics
+                                            case 'canViewMyCalendar': return p.member_view_calendar ?? true;
+                                            case 'canViewTeamCalendar': return p.member_view_team_calendar ?? false;
+                                            case 'canViewOtherFiles': return p.member_view_files ?? false;
+                                            case 'canViewWelfare': return p.member_view_welfare ?? true;
+
+                                            // Default Open
                                             case 'canViewProfile': return true;
-                                            case 'canViewDashboard': return true; // Usually everyone has a dashboard of some sort
-                                            case 'canViewSettings': return p.superAdmin;
-                                            case 'canViewSettings': return p.superAdmin;
-                                            case 'canViewOffice': return p.superAdmin || p.manageHr;
-                                            case 'canViewSanctions': return p.viewOps || p.memberViewSanctions;
+                                            case 'canViewForum': return true;
+                                            case 'canViewCommunication': return true;
+
                                             default: return false;
                                         }
                                     };
 
                                     if (currentUser) {
+                                        // [FIX] CRITICAL: Master Key for ADMIN/EMPRESA
+                                        if (currentUser.role === 'ADMIN' || currentUser.role === 'EMPRESA' || currentUser.permissions?.superAdmin) {
+                                            return true;
+                                        }
                                         return checkGranular(currentUser.permissions, key);
                                     }
-                                    if (currentMember) {
-                                        const perms = rolePermissions[currentMember.role];
+                                    if (currentMember && currentMember.role) {
+                                        // Normalize Role Key (Handle "Jefe Cocina" -> "JEFE_COCINA")
+                                        const roleKey = currentMember.role.toUpperCase().replace(/\s+/g, '_');
+                                        const perms = rolePermissions[currentMember.role] || rolePermissions[roleKey];
                                         return perms ? checkGranular(perms, key) : false;
                                     }
                                     return false;
@@ -1085,7 +1075,7 @@ const App: React.FC = () => {
                                         )}
                                         {currentView === View.WALLET && (hasPermission('canViewWallet') ? <WalletView transactions={walletTransactions} setTransactions={setWalletTransactions} pendingDebt={pendingDebt} userName={effectiveUser.name} fixedExpenses={fixedExpenses} setFixedExpenses={setFixedExpenses} employees={employees} currentUser={effectiveUser} auditData={auditData} setAuditData={setAuditData} onOpenAssistant={() => { setIsChatVisible(true); setIsChatMinimized(false); }} /> : <AccessDenied />)}
                                         {currentView === View.ROYALTIES && (hasPermission('canViewRoyalties') ? <RoyaltiesManagement partners={partners} setPartners={setPartners} royaltyPool={royaltyPool} setTransactions={setWalletTransactions} transactions={walletTransactions} userName={effectiveUser.name} royaltyHistory={royaltyHistory} addRoyaltyHistory={addRoyaltyHistory} /> : <AccessDenied />)}
-                                        {currentView === View.STATISTICS && (hasPermission('canViewFinance') ? <StatisticsDashboard cashShifts={cashShifts} walletTransactions={walletTransactions} /> : <AccessDenied />)}
+                                        {currentView === View.STATISTICS && (hasPermission('canViewStatistics') ? <StatisticsDashboard cashShifts={cashShifts} walletTransactions={walletTransactions} /> : <AccessDenied />)}
 
                                         {/* INVENTORY & SUPPLIERS */}
                                         {currentView === View.INVENTORY && (hasPermission('canViewInventory') ? <InventoryManager items={supplierProducts} sessions={inventorySessions} setSessions={setInventorySessions} userName={effectiveUser.name} onUpdateProduct={supplierProductsHook.update} /> : <AccessDenied />)}

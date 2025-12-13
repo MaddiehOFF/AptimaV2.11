@@ -15,7 +15,7 @@ interface UserManagementProps {
   roleDefinitions: Record<string, UserPermissions>;
 }
 
-export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, currentUser, customRoles, roleDefinitions }) => {
+export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers, currentUser, customRoles = [], roleDefinitions }) => {
   const [isDarkMode] = useState(() => localStorage.getItem('sushiblack_theme') === 'dark');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -46,12 +46,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
   });
 
   const [permissions, setPermissions] = useState<UserPermissions>({
-    viewHr: false, manageHr: false, createHr: false, editHr: false, deleteHr: false,
-    viewOps: false, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
-    viewFinance: false, manageFinance: false, createFinance: false, editFinance: false, deleteFinance: false, approveFinance: false,
-    viewInventory: false, manageInventory: false, createInventory: false, editInventory: false, deleteInventory: false,
+    // Standard Defaults
+    dashboard_view: true,
+    // HR
+    hr_view: false, hr_create: false, hr_edit: false, hr_delete: false, hr_manage: false,
+    // OPS
+    ops_view: false, ops_manage: false, ops_edit: false, ops_delete: false,
+    // Finance
+    finance_view: false, finance_manage: false,
+    // Inventory
+    inventory_view: false, inventory_manage: false,
+    // Sanctions matches "approve"
+    sanctions_view: false, sanctions_create: false, sanctions_approve: false, sanctions_manage: false,
+    // Others
     superAdmin: false
-  });
+  } as UserPermissions);
 
   const [tags, setTags] = useState<string[]>([]);
   const addTag = (tag: string) => setTags(prev => [...prev, tag]);
@@ -97,12 +106,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
     setEditingUser(null);
     setNewUser({ username: '', email: '', password: '', name: '', role: 'CAJERO' });
     setPermissions({
-      viewHr: false, manageHr: false, createHr: false, editHr: false, deleteHr: false,
-      viewOps: false, manageOps: false, createOps: false, editOps: false, deleteOps: false, approveOps: false,
-      viewFinance: false, manageFinance: false, createFinance: false, editFinance: false, deleteFinance: false, approveFinance: false,
-      viewInventory: false, manageInventory: false, createInventory: false, editInventory: false, deleteInventory: false,
+      dashboard_view: true,
+      hr_view: false, hr_create: false, hr_edit: false, hr_delete: false, hr_manage: false,
+      ops_view: false, ops_manage: false, ops_edit: false, ops_delete: false,
+      finance_view: false, finance_manage: false,
+      inventory_view: false, inventory_manage: false,
+      sanctions_view: false, sanctions_create: false, sanctions_approve: false, sanctions_manage: false,
       superAdmin: false
-    });
+    } as UserPermissions);
     setTags([]);
     setShowModal(false);
   };
@@ -258,10 +269,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
                     ))}
 
                     {/* Permissions Badges */}
-                    {u.permissions.viewFinance && <span className="text-[9px] bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-500 border border-green-200 dark:border-green-500/20 px-1 rounded">Finanzas{u.permissions.manageFinance ? '+' : ''}</span>}
-                    {u.permissions.viewHr && <span className="text-[9px] bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500 px-1 rounded">RRHH{u.permissions.manageHr ? '+' : ''}</span>}
-                    {u.permissions.viewOps && <span className="text-[9px] bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500 px-1 rounded">Operaciones{u.permissions.manageOps ? '+' : ''}</span>}
-                    {u.permissions.viewInventory && <span className="text-[9px] bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-500 px-1 rounded">Inventario{u.permissions.manageInventory ? '+' : ''}</span>}
+                    {u.permissions.finance_view && <span className="text-[9px] bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-500 border border-green-200 dark:border-green-500/20 px-1 rounded">Finanzas{u.permissions.finance_manage ? '+' : ''}</span>}
+                    {u.permissions.hr_view && <span className="text-[9px] bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500 px-1 rounded">RRHH{u.permissions.hr_manage ? '+' : ''}</span>}
+                    {u.permissions.ops_view && <span className="text-[9px] bg-orange-100 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500 px-1 rounded">Operaciones{u.permissions.ops_manage ? '+' : ''}</span>}
+                    {u.permissions.inventory_view && <span className="text-[9px] bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-500 px-1 rounded">Inventario{u.permissions.inventory_manage ? '+' : ''}</span>}
                   </div>
                 </div>
               </div>
@@ -428,30 +439,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
                 <GranularPermissionRow
                   label="RRHH"
                   icon={Users}
-                  baseKey="Hr"
+                  baseKey="hr"
                   permissions={permissions}
                   toggle={togglePermission}
                 />
                 <GranularPermissionRow
                   label="Operaciones"
                   icon={Clock}
-                  baseKey="Ops"
+                  baseKey="ops"
                   permissions={permissions}
                   toggle={togglePermission}
-                  hasApprove
                 />
                 <GranularPermissionRow
                   label="Finanzas"
                   icon={Wallet}
-                  baseKey="Finance"
+                  baseKey="finance"
                   permissions={permissions}
                   toggle={togglePermission}
-                  hasApprove
                 />
                 <GranularPermissionRow
                   label="Inventario"
                   icon={Box}
-                  baseKey="Inventory"
+                  baseKey="inventory"
                   permissions={permissions}
                   toggle={togglePermission}
                 />
@@ -505,25 +514,41 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, setUsers,
 };
 
 // Helper Row Component
+// Helper Row Component
 const GranularPermissionRow = ({ label, icon: Icon, baseKey, permissions, toggle, hasApprove }: any) => {
-  // Construct keys dynamically
-  const viewKey = `view${baseKey}`;
-  const createKey = `create${baseKey}`;
-  const editKey = `edit${baseKey}`;
-  const deleteKey = `delete${baseKey}`;
-  const approveKey = `approve${baseKey}`;
+  // Construct keys dynamically (snake_case)
+  // We explicitly cast to avoid TS errors, but implementation assumes keys exist in UserPermissions
+  const viewKey = `${baseKey.toLowerCase()}_view` as keyof UserPermissions;
+  const createKey = `${baseKey.toLowerCase()}_create` as keyof UserPermissions;
+  const editKey = `${baseKey.toLowerCase()}_edit` as keyof UserPermissions;
+  const deleteKey = `${baseKey.toLowerCase()}_delete` as keyof UserPermissions;
+  const approveKey = `${baseKey.toLowerCase()}_approve` as keyof UserPermissions;
+
+  // Safe helper to check if key exists in permissions object (runtime check for UI)
+  const renderCheckbox = (key: keyof UserPermissions) => {
+    // Only render if the key is actually defined in the permissions object (or we assume it handles undefined gracefully)
+    // For specific modules like 'ops' that don't have 'create', we can either hide it or show disabled.
+    // Here we blindly render but checking existence helps.
+    const exists = permissions.hasOwnProperty(key) || permissions[key] !== undefined;
+    if (!exists && key.includes('create') && baseKey === 'ops') return <span className="text-gray-300">-</span>; // Hack for Ops
+    if (!exists && key.includes('approve') && !hasApprove) return <span className="text-gray-300">-</span>;
+
+    return (
+      <input type="checkbox" checked={!!permissions[key]} onChange={() => toggle(key)} className="w-4 h-4 accent-sushi-gold cursor-pointer" />
+    );
+  };
 
   return (
     <div className="grid grid-cols-6 gap-2 py-2 items-center border-b border-gray-100 dark:border-white/5 last:border-0 min-w-[500px]">
       <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-white font-medium col-span-1">
         <Icon className="w-4 h-4 text-gray-400" /> {label}
       </div>
-      <div className="flex justify-center"><input type="checkbox" checked={!!permissions[viewKey]} onChange={() => toggle(viewKey)} className="w-4 h-4 accent-sushi-gold cursor-pointer" /></div>
-      <div className="flex justify-center"><input type="checkbox" checked={!!permissions[createKey]} onChange={() => toggle(createKey)} className="w-4 h-4 accent-sushi-gold cursor-pointer" /></div>
-      <div className="flex justify-center"><input type="checkbox" checked={!!permissions[editKey]} onChange={() => toggle(editKey)} className="w-4 h-4 accent-sushi-gold cursor-pointer" /></div>
-      <div className="flex justify-center"><input type="checkbox" checked={!!permissions[deleteKey]} onChange={() => toggle(deleteKey)} className="w-4 h-4 accent-sushi-gold cursor-pointer" /></div>
+      <div className="flex justify-center">{renderCheckbox(viewKey)}</div>
+      <div className="flex justify-center">{renderCheckbox(createKey)}</div>
+      <div className="flex justify-center">{renderCheckbox(editKey)}</div>
+      <div className="flex justify-center">{renderCheckbox(deleteKey)}</div>
       <div className="flex justify-center">
-        {hasApprove && <input type="checkbox" checked={!!permissions[approveKey]} onChange={() => toggle(approveKey)} className="w-4 h-4 accent-sushi-gold cursor-pointer" />}
+        {hasApprove ? renderCheckbox(approveKey) : <span className="text-gray-300">-</span>}
       </div>
     </div>
   );

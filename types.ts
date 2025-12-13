@@ -248,47 +248,105 @@ export interface DeliverySchedule {
 export type UserRole = 'ADMIN' | 'EMPRESA' | 'GERENTE' | 'COORDINADOR' | 'JEFE_COCINA' | 'ADMINISTRATIVO' | 'MOSTRADOR' | 'COCINA' | 'REPARTIDOR' | 'ENCARGADO' | 'CAJERO' | string;
 
 // Granular Permissions System
+// Granular Permissions System
 export interface UserPermissions {
-  // HR Module
-  viewHr: boolean; // See list, files
-  manageHr: boolean; // Legacy: Full Control
-  createHr?: boolean;
-  editHr?: boolean;
-  deleteHr?: boolean;
+  // --- 1. DASHBOARD ---
+  dashboard_view: boolean;
 
-  // Operations Module
-  viewOps: boolean; // See overtime, sanctions
-  manageOps: boolean; // Legacy: Full Control
-  createOps?: boolean;
-  editOps?: boolean;
-  deleteOps?: boolean;
-  approveOps?: boolean; // Sanctions approval
+  // --- 2. RRHH (Employees) ---
+  hr_view: boolean;
+  hr_create: boolean;
+  hr_edit: boolean;
+  hr_delete: boolean;
+  hr_manage: boolean;
 
-  // Finance Module
-  viewFinance: boolean; // See Dashboard costs, Wallet balance
-  manageFinance: boolean; // Legacy: Full Control
-  createFinance?: boolean;
-  editFinance?: boolean;
-  deleteFinance?: boolean;
-  approveFinance?: boolean; // Budget Requests
+  // --- 3. OPERATIONS (Overtime) ---
+  ops_view: boolean;
+  ops_edit: boolean; // Manual edit of hours
+  ops_delete: boolean;
+  ops_manage: boolean;
 
-  // Inventory & Stock
-  viewInventory: boolean;
-  manageInventory: boolean; // Legacy: Full Control
-  createInventory?: boolean;
-  editInventory?: boolean;
-  deleteInventory?: boolean;
+  // --- 4. SANCTIONS (Novedades) ---
+  sanctions_view: boolean;
+  sanctions_create: boolean;
+  sanctions_approve: boolean; // For coordinators
+  sanctions_manage: boolean;
 
-  // System
-  superAdmin: boolean; // Manage Users, Global Settings
+  // --- 5. FILES (Expedientes) ---
+  files_view: boolean;
+  files_manage: boolean;
 
-  // Employee Portal (Member View) Permissions
-  memberViewMyCalendar: boolean; // 'Mi Calendario'
-  memberViewTeamCalendar: boolean; // 'Calendario Equipo'
-  memberViewAllFiles: boolean; // 'Expedientes' (See others)
-  memberViewChecklist: boolean; // 'Mi Check-List'
-  memberViewWelfare: boolean; // 'Muro Social'
-  memberViewSanctions: boolean; // 'Novedades/Sanctions'
+  // --- 6. CASH REGISTER (Caja) ---
+  cash_view: boolean;
+  cash_register: boolean; // Add transaction
+  cash_close: boolean; // Close shift (Z-Cut)
+  cash_delete: boolean; // Void transaction
+  cash_manage: boolean;
+
+  // --- 7. OFFICE (Oficina Virtual) ---
+  office_view: boolean;
+  office_create: boolean;
+  office_delete: boolean;
+
+  // --- 8. PAYROLL (Nómina) ---
+  payroll_view: boolean;
+  payroll_manage: boolean; // Accrued salary, etc.
+
+  // --- 9. USERS (System Users) ---
+  users_view: boolean;
+  users_manage: boolean;
+
+  // --- 10. PRODUCTS (Catalog) ---
+  products_view: boolean;
+  products_manage: boolean;
+
+  // --- 11. CONFIGURATION (Settings) ---
+  settings_view: boolean;
+  settings_manage: boolean;
+
+  // --- 12. FINANCE (Costos/Dashboard) ---
+  finance_view: boolean;
+  finance_manage: boolean;
+
+  // --- 13. WALLET (Billetera) ---
+  wallet_view: boolean;
+  wallet_create: boolean;
+  wallet_delete: boolean;
+  wallet_manage: boolean;
+
+  // --- 14. ROYALTIES (Partners) ---
+  royalties_view: boolean;
+  royalties_manage: boolean;
+
+  // --- 15. STATISTICS ---
+  stats_view: boolean;
+
+  // --- 16. INVENTORY ---
+  inventory_view: boolean;
+  inventory_manage: boolean; // Stock overrides, sessions
+
+  // --- 18. SUPPLIERS (Insumos) ---
+  suppliers_view: boolean;
+  suppliers_manage: boolean;
+
+  // --- 19. AI (Consultor) ---
+  ai_view: boolean;
+
+  // --- 20. MANUAL (Manual Operativo) ---
+  manual_view: boolean;
+  manual_manage: boolean;
+
+  // --- 17. PORTAL EMPLEADO ---
+  member_view_calendar: boolean; // My Calendar
+  member_view_team_calendar: boolean; // Team Calendar
+  member_view_files: boolean; // Other Files
+  member_view_profile: boolean; // My Profile (Expediente)
+  member_view_checklist: boolean;
+  member_view_welfare: boolean;
+  member_view_sanctions: boolean;
+
+  // --- LEGACY COMPATIBILITY (Optional but helped) ---
+  superAdmin: boolean;
 }
 
 export interface User {
@@ -512,6 +570,7 @@ export enum View {
 
   // Strategy Group
   AI_REPORT = 'AI_REPORT',
+  MANUAL = 'MANUAL',
   FORUM = 'FORUM',
 
   // Gamification (Merits)
@@ -558,6 +617,7 @@ export type PermissionKey =
   | 'canViewDashboard'
   | 'canViewHR'
   | 'canViewFiles'
+  | 'canViewOps' // General Operations View
   | 'canViewOvertime' // Control Hs
   | 'canViewPayroll' // Sueldos
   | 'canViewSanctions'
@@ -568,6 +628,7 @@ export type PermissionKey =
   | 'canViewFinance' // Finance Dashboard (was generic)
   | 'canViewWallet' // Billetera
   | 'canViewRoyalties'
+  | 'canViewStatistics' // New specific key
   // Member Portal Specific
   | 'canViewMyCalendar'
   | 'canViewTeamCalendar'
